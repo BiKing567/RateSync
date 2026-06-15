@@ -1,0 +1,41 @@
+/* Status bar item toggle */
+"Show Sample Rate" = "显示采样率";
+"Show Icon" = "显示图标";
+
+/* Menu toggles */
+"Bit Depth Switching" = "位深度切换";
+"Prefer Closest Sample Rate Multiple" = "偏好最接近的采样率倍数";
+
+/* Device selection */
+"Default Device" = "默认设备";
+"Selected Device" = "已选设备";
+
+/* About menu */
+"About" = "关于";
+"Version - %@" = "版本 - %@";
+"Build - %@" = "构建 - %@";
+
+/* Scripting menu */
+"Scripting" = "脚本";
+"Select Script..." = "选择脚本...";
+"Clear Selection" = "清除选择";
+"No selection" = "未选择";
+
+/* Script selection panel */
+"Select a script that should be invoked when sample rate changes." = "选择在采样率变化时应执行的脚本。";
+
+/* Quit */
+"Quit LosslessSwitcher" = "退出 LosslessSwitcher";
+
+/* Sample rate label fallback */
+"Unknown" = "未知";
+
+/* Alert titles */
+"Requires Privileges" = "需要管理员权限";
+
+/* Alert messages */
+"LosslessSwitcher requires Administrator privileges in order to detect each song's lossless sample rate in the Music app." = "LosslessSwitcher 需要管理员权限以在音乐 App 中检测每首歌曲的无损采样率。";
+"LosslessSwitcher could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work." = "LosslessSwitcher 无法检查您的账户是否具有管理员权限。若缺少管理员权限，采样率检测将无法工作。";
+
+/* Initial status item text */
+"Loading..." = "加载中...";
