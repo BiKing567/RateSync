@@ -5,6 +5,8 @@
 
 # LosslessSwitcher 汉化版
 
+> 本项目基于 [vincentneo/LosslessSwitcher](https://github.com/vincentneo/LosslessSwitcher)（GPL-3.0）汉化并修复而来，原始项目作者 Vincent Neo。如果你喜欢这个应用，请考虑[赞助原作者](https://github.com/sponsors/vincentneo)。
+
 LosslessSwitcher 会自动将当前音频输出设备的采样率切换到与 Apple Music 正在播放的无损歌曲一致的采样率。
 
 例如，如果下一首播放的歌曲是采样率为 192kHz 的 Hi-Res 无损曲目，LosslessSwitcher 会尽快将设备采样率切换至 192kHz。
@@ -14,16 +16,17 @@ LosslessSwitcher 会自动将当前音频输出设备的采样率切换到与 Ap
 ## 安装
 
 ### 适用于 macOS Big Sur 11.4 至 macOS Sonoma 14.x
-请使用 1.x 版本的发行版，例如 [1.0](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.0)、1.1 或 [1.1.1 测试版](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.1-beta2)。
+请使用 1.x 版本的发行版（上游原版），例如 [1.0](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.0)、1.1 或 [1.1.1 测试版](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.1-beta2)。
 1.x 版本同样适用于 macOS Sequoia 15.3.1 及更早版本。
 
-你可以在此处找到 1.x 分支的最新稳定版：[v1.1 下载链接](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.0)
+你可以在此处找到 1.x 分支的最新稳定版（上游原版）：[v1.1 下载链接](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.0)
 
 ### 适用于 macOS Sequoia 15.4 及更新版本
-该支持仍处于测试阶段。你可以在此处尝试最新的 2.0 测试版：[v2.0 Beta 1 下载链接](https://github.com/vincentneo/LosslessSwitcher/releases/tag/2.0-beta1)
+汉化版基于上游 2.0 分支开发，请下载本仓库的发行版：[LosslessSwitcher 2.0 汉化版（v2.0）](https://github.com/BiKing567/LosslessSwitcher/releases/tag/v2.0)。
+上游原版的 2.0 测试版见：[v2.0 Beta 1](https://github.com/vincentneo/LosslessSwitcher/releases/tag/2.0-beta1)。
 
 #### 安装步骤
-1. 下载所需版本的 `.zip` 压缩包。
+1. 下载所需版本的 `.dmg` 安装镜像。
 2. 将应用拖入"应用程序"文件夹。
 
 如果你希望开机自动运行，可以在系统设置中添加 LosslessSwitcher：
