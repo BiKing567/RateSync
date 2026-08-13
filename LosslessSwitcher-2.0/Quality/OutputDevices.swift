@@ -34,6 +34,7 @@ class OutputDevices: ObservableObject {
     
     private var previousSampleRate: Float64?
     private var previousBitDepth: Int?
+    private var lastTrackChangeDate: Date?
     var trackAndSample = [MediaTrack : Float64]()
     var trackAndBitDepth = [MediaTrack : Int]()
     var previousTrack: MediaTrack?
@@ -149,94 +150,89 @@ class OutputDevices: ObservableObject {
     }
     
     func switchLatestSampleRate(recursion: Bool = false) {
-        let allStats = self.getAllStats()
+        var allStats = self.getAllStats()
+        // Ignore logs from before the current track started playing,
+        // as stale logs from the previous track cause wrong switches.
+        if let lastTrackChangeDate = lastTrackChangeDate {
+            allStats = allStats.filter { $0.date >= lastTrackChangeDate }
+            // If every log entry was filtered out, it may mean the new track's
+            // logs are not in the window yet (or were written before the event).
+            // Fall back to AppleScript on the initial attempt so switching is not lost.
+            if allStats.isEmpty, !recursion, let sampleRate = getSampleRateFromAppleScript() {
+                allStats = [CMPlayerStats(sampleRate: sampleRate, bitDepth: 24, date: Date(), priority: 1)]
+                print("[switchLatestSampleRate] AppleScript fallback after filtering: \(sampleRate)")
+            }
+        }
         let defaultDevice = self.selectedOutputDevice ?? self.defaultOutputDevice
-        
+
+        var didFindStat = false
+
         if let first = allStats.first, let supported = defaultDevice?.nominalSampleRates {
+            didFindStat = true
             let sampleRate = Float64(first.sampleRate)
             let bitDepth = Int32(first.bitDepth)
-            
-            if self.currentTrack == self.previousTrack, let prevSampleRate = currentSampleRate, prevSampleRate > sampleRate {
-                print("same track, prev sample rate is higher")
+
+            // Same track already switched to this sample rate; skip to avoid switching repeatedly within one song.
+            if let currentTrack = currentTrack,
+               let cachedSampleRate = trackAndSample[currentTrack],
+               cachedSampleRate == sampleRate,
+               defaultDevice?.nominalSampleRate == sampleRate {
+                print("same track, sample rate already applied, skip")
                 return
             }
-            
-            if sampleRate == 48000 && !recursion {
-                processQueue.asyncAfter(deadline: .now() + 1) {
-                    self.switchLatestSampleRate(recursion: true)
-                }
-            }
-            
-            let formats = self.getFormats(bestStat: first, device: defaultDevice!)!
-            
+
+            guard let formats = self.getFormats(bestStat: first, device: defaultDevice!) else { return }
+
             // https://stackoverflow.com/a/65060134
             var nearest = supported.min(by: {
                 abs($0 - sampleRate) < abs($1 - sampleRate)
             })
-            
+
             let nearestBitDepth = formats.min(by: {
                 abs(Int32($0.mBitsPerChannel) - bitDepth) < abs(Int32($1.mBitsPerChannel) - bitDepth)
             })
-            
+
             if Defaults.shared.userPreferSampleRateMultiples,
                let nearestSampleRate = nearest,
                nearestSampleRate != sampleRate, supported.contains(sampleRate / 2) {
                 nearest = sampleRate / 2
             }
-            
+
             let nearestFormat = formats.filter({
                 $0.mSampleRate == nearest && $0.mBitsPerChannel == nearestBitDepth?.mBitsPerChannel
             })
-            
+
             print("NEAREST FORMAT \(nearestFormat)")
-            
+
             if let suitableFormat = nearestFormat.first {
+                let sampleRateChanged = suitableFormat.mSampleRate != previousSampleRate
+                let bitDepthChanged = enableBitDepthDetection && Int(suitableFormat.mBitsPerChannel) != previousBitDepth
+                let formatChanged = sampleRateChanged || bitDepthChanged
+
                 if enableBitDepthDetection {
                     self.setFormats(device: defaultDevice, format: suitableFormat)
                 }
-                else if suitableFormat.mSampleRate != previousSampleRate { // bit depth disabled
+                else if sampleRateChanged { // bit depth disabled
                     defaultDevice?.setNominalSampleRate(suitableFormat.mSampleRate)
                 }
-                self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel))
+                self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel), runUserScript: formatChanged)
                 if let currentTrack = currentTrack {
                     self.trackAndSample[currentTrack] = suitableFormat.mSampleRate
                     self.trackAndBitDepth[currentTrack] = Int(suitableFormat.mBitsPerChannel)
                 }
             }
-
-//            if let nearest = nearest {
-//                let nearestSampleRate = nearest.element
-//                if nearestSampleRate != previousSampleRate {
-//                    defaultDevice?.setNominalSampleRate(nearestSampleRate)
-//                    self.updateSampleRate(nearestSampleRate)
-//                    if let currentTrack = currentTrack {
-//                        self.trackAndSample[currentTrack] = nearestSampleRate
-//                    }
-//                }
-//            }
         }
-        else if !recursion {
-            processQueue.asyncAfter(deadline: .now() + 1) {
+
+        // Console logs may not contain the new track's format yet right after a track change.
+        // Retry once shortly instead of waiting for the slower fallback timer.
+        if !didFindStat && !recursion {
+            processQueue.asyncAfter(deadline: .now() + 0.5) {
                 self.switchLatestSampleRate(recursion: true)
             }
         }
-        else {
-//                print("cache \(self.trackAndSample)")
-            if self.currentTrack == self.previousTrack {
-                print("same track, ignore cache")
-                return
-            }
-//            if let currentTrack = currentTrack, let cachedSampleRate = trackAndSample[currentTrack] {
-//                print("using cached data")
-//                if cachedSampleRate != previousSampleRate {
-//                    defaultDevice?.setNominalSampleRate(cachedSampleRate)
-//                    self.updateSampleRate(cachedSampleRate)
-//                }
-//            }
-        }
-
     }
-    
+
+
     func getFormats(bestStat: CMPlayerStats, device: AudioDevice) -> [AudioStreamBasicDescription]? {
         // new sample rate + bit depth detection route
         let streams = device.streams(scope: .output)
@@ -252,7 +248,7 @@ class OutputDevices: ObservableObject {
         }
     }
     
-    func updateSampleRate(_ sampleRate: Float64, bitDepth: Int?) {
+    func updateSampleRate(_ sampleRate: Float64, bitDepth: Int?, runUserScript: Bool = true) {
         self.previousSampleRate = sampleRate
         self.previousBitDepth = bitDepth
         DispatchQueue.main.async { [self] in
@@ -272,7 +268,9 @@ class OutputDevices: ObservableObject {
                 delegate?.statusItemTitle = String(format: "%.1f kHz", readableSampleRate)
             }
         }
-        self.runUserScript(sampleRate, bitDepth: bitDepth)
+        if runUserScript {
+            self.runUserScript(sampleRate, bitDepth: bitDepth)
+        }
     }
     
     func runUserScript(_ sampleRate: Float64, bitDepth: Int?) {
@@ -297,10 +295,15 @@ class OutputDevices: ObservableObject {
         }
     }
     
-    func trackDidChange(_ newTrack: TrackInfo) {
+    func trackDidChange(_ newTrack: TrackInfo, eventDate: Date? = nil) {
         self.previousTrack = self.currentTrack
         self.currentTrack = MediaTrack(trackInfo: newTrack)
         if self.previousTrack != self.currentTrack {
+            // Decoder log entries are timestamped when the new track starts decoding,
+            // which can be slightly before the MediaRemote event arrives. Use the event
+            // time minus a small tolerance, so the new track's logs pass the filter
+            // while stale logs from the previous track are discarded.
+            self.lastTrackChangeDate = (eventDate ?? Date()).addingTimeInterval(-0.5)
             self.renewTimer()
         }
         processQueue.async { [unowned self] in
