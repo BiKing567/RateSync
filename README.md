@@ -5,7 +5,7 @@
 
 # LosslessSwitcher 汉化版
 
-> 本项目基于 [vincentneo/LosslessSwitcher](https://github.com/vincentneo/LosslessSwitcher)（GPL-3.0）汉化并修复而来，原始项目作者 Vincent Neo。如果你喜欢这个应用，请考虑[赞助原作者](https://github.com/sponsors/vincentneo)。
+> 本项目基于 [vincentneo/LosslessSwitcher](https://github.com/vincentneo/LosslessSwitcher)（GPL-3.0）汉化并修复而来，感谢原作者 Vincent Neo 开发了这款优秀的开源应用。
 
 LosslessSwitcher 会自动将当前音频输出设备的采样率切换到与 Apple Music 正在播放的无损歌曲一致的采样率。
 
