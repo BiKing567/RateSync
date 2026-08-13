@@ -162,7 +162,7 @@ LosslessSwitcher 采用 GPL-3.0 许可证。
 
 ## 喜欢这个项目？
 如果你认可这个应用的开发，欢迎分享给更多人，让更多人了解 LosslessSwitcher。
-你也可以通过[赞助](https://github.com/sponsors/vincentneo)本项目来表示支持！
+感谢使用！
 
 ## 依赖
 - [Sweep](https://github.com/JohnSundell/Sweep)，作者 @JohnSundell，一个易于使用的 Swift 字符串扫描器。
