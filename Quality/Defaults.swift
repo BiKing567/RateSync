@@ -72,7 +72,7 @@ class Defaults: ObservableObject {
     }
 
     var statusBarItemTitle: String {
-        let title = self.userPreferIconStatusBarItem ? "Show Sample Rate" : "Show Icon"
+        let title = self.userPreferIconStatusBarItem ? NSLocalizedString("Show Sample Rate", comment: "Status bar item toggle") : NSLocalizedString("Show Icon", comment: "Status bar item toggle")
         return title
     }
 }

@@ -10,6 +10,8 @@ import SwiftUI
 
 @Observable
 class MenuBarController {
+    static let shared = MenuBarController()
+    
     @ObservationIgnored
     var outputDevices: OutputDevices!
     

@@ -33,6 +33,7 @@
 		BF342D822E0948730032F398 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D812E0948730032F398 /* MenuView.swift */; };
 		BF5A87BA2E01D746002033D6 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A87B92E01D746002033D6 /* MenuBarController.swift */; };
 		BF7E0D09296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */; };
+		BF9900022E0999990032F001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BF9900032E0999990032F001 /* Localizable.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -74,6 +75,7 @@
 		BF342D812E0948730032F398 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		BF5A87B92E01D746002033D6 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioStreamBasicDescription+Equatable.swift"; sourceTree = "<group>"; };
+		BF9900012E0999990032F001 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh-Hans; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -142,6 +144,7 @@
 				BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */,
 				BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */,
 				BF0C90C72B20BFD6002F99C9 /* LosslessSwitcher.sdef */,
+				BF9900032E0999990032F001 /* Localizable.strings */,
 			);
 			path = Quality;
 			sourceTree = "<group>";
@@ -203,6 +206,7 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = 1272AA8B280DBB4900FD72BA;
 			packageReferences = (
@@ -228,6 +232,7 @@
 				1272AA9F280DBB4B00FD72BA /* Preview Assets.xcassets in Resources */,
 				BF0C90C82B20BFD6002F99C9 /* LosslessSwitcher.sdef in Resources */,
 				1272AA9C280DBB4B00FD72BA /* Assets.xcassets in Resources */,
+				BF9900022E0999990032F001 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -259,6 +264,17 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		BF9900032E0999990032F001 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				BF9900012E0999990032F001 /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		1272AAA1280DBB4B00FD72BA /* Debug */ = {
@@ -380,11 +396,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Quality/Quality.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_ASSET_PATHS = "\"Quality/Preview Content\"";
-				DEVELOPMENT_TEAM = 3X69W4AQD6;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -416,11 +432,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Quality/Quality.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_ASSET_PATHS = "\"Quality/Preview Content\"";
-				DEVELOPMENT_TEAM = 3X69W4AQD6;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

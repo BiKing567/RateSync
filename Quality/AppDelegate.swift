@@ -17,7 +17,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     static private(set) var instance: AppDelegate! = nil
     var outputDevices: OutputDevices!
     private let defaults = Defaults.shared
-    private var mrController: MediaRemoteController!
     private var devicesMenu: NSMenu!
     
     var statusItem: NSStatusItem?
@@ -25,7 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     var currentScriptSelectionMenuItem: NSMenuItem?
 
-    private var _statusItemTitle = "Loading..."
+    private var _statusItemTitle = NSLocalizedString("Loading...", comment: "Initial status bar text")
     var statusItemTitle: String {
         get {
             return _statusItemTitle
@@ -40,8 +39,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             if try !User.current.isAdmin() {
                 let alert = NSAlert()
-                alert.messageText = "Requires Privileges"
-                alert.informativeText = "LosslessSwitcher requires Administrator privileges in order to detect each song's lossless sample rate in the Music app."
+                alert.messageText = NSLocalizedString("Requires Privileges", comment: "Alert title")
+                alert.informativeText = NSLocalizedString("LosslessSwitcher requires Administrator privileges in order to detect each song's lossless sample rate in the Music app.", comment: "Alert message when admin privileges are required")
                 alert.alertStyle = .critical
                 alert.runModal()
                 NSApp.terminate(self)
@@ -49,8 +48,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         catch {
             let alert = NSAlert()
-            alert.messageText = "Requires Privileges"
-            alert.informativeText = "LosslessSwitcher could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work."
+            alert.messageText = NSLocalizedString("Requires Privileges", comment: "Alert title")
+            alert.informativeText = NSLocalizedString("LosslessSwitcher could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work.", comment: "Alert message when admin check fails")
             alert.alertStyle = .warning
             alert.runModal()
         }
@@ -58,8 +57,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.instance = self
-        outputDevices = OutputDevices()
-        mrController = MediaRemoteController(outputDevices: outputDevices)
+        outputDevices = MenuBarController.shared.outputDevices
         
         checkPermissions()
 //        
