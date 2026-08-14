@@ -149,15 +149,28 @@ class OutputDevices: ObservableObject {
         return allStats
     }
     
-    func switchLatestSampleRate(recursion: Bool = false) {
+    func switchLatestSampleRate(for expectedTrack: MediaTrack? = nil, recursion: Bool = false) {
+        // P1: stale-task guard. The switch task is queued on the serial processQueue
+        // with a snapshot of the track it was scheduled for. If the track changed
+        // before the task ran, discard it - otherwise its parsed sample rate (from
+        // the newer track's log entries) could be applied to the older track.
+        if let expectedTrack = expectedTrack, currentTrack != expectedTrack {
+            print("stale switch task for previous track, skip")
+            return
+        }
         var allStats = self.getAllStats()
         // Ignore logs from before the current track started playing,
         // as stale logs from the previous track cause wrong switches.
         if let lastTrackChangeDate = lastTrackChangeDate {
-            allStats = allStats.filter { $0.date >= lastTrackChangeDate }
+            // P2: recursive retries widen the tolerance window. Decoder logs can be
+            // written more than 0.5s before the MediaRemote event (e.g. delayed UI
+            // state updates); a strict filter would permanently discard them and,
+            // if the AppleScript fallback also fails, the switch would be lost.
+            let threshold = recursion ? lastTrackChangeDate.addingTimeInterval(-1.5) : lastTrackChangeDate
+            allStats = allStats.filter { $0.date >= threshold }
             // If every log entry was filtered out, it may mean the new track's
-            // logs are not in the window yet (or were written before the event).
-            // Fall back to AppleScript on the initial attempt so switching is not lost.
+            // logs are not in the window yet. Fall back to AppleScript on the
+            // initial attempt so switching is not lost.
             if allStats.isEmpty, !recursion, let sampleRate = getSampleRateFromAppleScript() {
                 allStats = [CMPlayerStats(sampleRate: sampleRate, bitDepth: 24, date: Date(), priority: 1)]
                 print("[switchLatestSampleRate] AppleScript fallback after filtering: \(sampleRate)")
@@ -165,24 +178,30 @@ class OutputDevices: ObservableObject {
         }
         let defaultDevice = self.selectedOutputDevice ?? self.defaultOutputDevice
 
-        // Same-track lock: once a sample rate has been applied for the current track,
-        // never switch again within the same song, unless the output device itself
-        // changed (e.g. the user switched device). Multiple decoder log entries
-        // (e.g. Dolby Atmos streams) can jitter between sample rates, which would
-        // otherwise cause repeated switching within one song.
-        if let currentTrack = currentTrack,
-           let cachedSampleRate = trackAndSample[currentTrack],
-           defaultDevice?.nominalSampleRate == cachedSampleRate {
-            print("same track, sample rate already applied, skip")
-            return
-        }
-
         var didFindStat = false
 
         if let first = allStats.first, let supported = defaultDevice?.nominalSampleRates {
             didFindStat = true
             let sampleRate = Float64(first.sampleRate)
             let bitDepth = Int32(first.bitDepth)
+
+            // Same-track lock: once a sample rate has been applied for the current
+            // track, never switch again within the same song unless the output
+            // device itself changed (e.g. the user switched device) or, in bit
+            // depth mode, the parsed bit depth actually changed within the track.
+            // Multiple decoder log entries (e.g. Dolby Atmos streams) can jitter
+            // between sample rates, which would otherwise cause repeated switching.
+            if let currentTrack = currentTrack,
+               let cachedSampleRate = trackAndSample[currentTrack],
+               defaultDevice?.nominalSampleRate == cachedSampleRate {
+                let bitDepthChanged = enableBitDepthDetection
+                    && trackAndBitDepth[currentTrack] != Int(bitDepth)
+                if !bitDepthChanged {
+                    print("same track, sample rate already applied, skip")
+                    return
+                }
+                print("same track, bit depth changed, re-applying format")
+            }
 
             guard let formats = self.getFormats(bestStat: first, device: defaultDevice!) else { return }
 
@@ -230,7 +249,7 @@ class OutputDevices: ObservableObject {
         // Retry once shortly instead of waiting for the slower fallback timer.
         if !didFindStat && !recursion {
             processQueue.asyncAfter(deadline: .now() + 0.5) {
-                self.switchLatestSampleRate(recursion: true)
+                self.switchLatestSampleRate(for: expectedTrack, recursion: true)
             }
         }
     }
@@ -315,8 +334,11 @@ class OutputDevices: ObservableObject {
             self.lastTrackChangeDate = (eventDate ?? Date()).addingTimeInterval(-0.5)
             self.renewTimer()
         }
+        // Snapshot the track this task was scheduled for, so the stale-task guard
+        // in switchLatestSampleRate can discard it if the track changes first.
+        let trackSnapshot = MediaTrack(trackInfo: newTrack)
         processQueue.async { [unowned self] in
-            self.switchLatestSampleRate()
+            self.switchLatestSampleRate(for: trackSnapshot)
         }
     }
 }

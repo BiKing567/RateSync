@@ -22,7 +22,7 @@ LosslessSwitcher 会自动将当前音频输出设备的采样率切换到与 Ap
 你可以在此处找到 1.x 分支的最新稳定版（上游原版）：[v1.1 下载链接](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.0)
 
 ### 适用于 macOS Sequoia 15.4 及更新版本
-汉化版基于上游 2.0 分支开发，请下载本仓库的发行版：[LosslessSwitcher 2.0 汉化版（v2.0）](https://github.com/BiKing567/LosslessSwitcher/releases/tag/v2.0)。
+汉化版基于上游 2.0 分支开发，请下载本仓库的发行版：[LosslessSwitcher 2.1 汉化版（v2.1）](https://github.com/BiKing567/LosslessSwitcher/releases/tag/v2.1)。
 上游原版的 2.0 测试版见：[v2.0 Beta 1](https://github.com/vincentneo/LosslessSwitcher/releases/tag/2.0-beta1)。
 
 #### 安装步骤
