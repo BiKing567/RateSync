@@ -165,21 +165,24 @@ class OutputDevices: ObservableObject {
         }
         let defaultDevice = self.selectedOutputDevice ?? self.defaultOutputDevice
 
+        // Same-track lock: once a sample rate has been applied for the current track,
+        // never switch again within the same song, unless the output device itself
+        // changed (e.g. the user switched device). Multiple decoder log entries
+        // (e.g. Dolby Atmos streams) can jitter between sample rates, which would
+        // otherwise cause repeated switching within one song.
+        if let currentTrack = currentTrack,
+           let cachedSampleRate = trackAndSample[currentTrack],
+           defaultDevice?.nominalSampleRate == cachedSampleRate {
+            print("same track, sample rate already applied, skip")
+            return
+        }
+
         var didFindStat = false
 
         if let first = allStats.first, let supported = defaultDevice?.nominalSampleRates {
             didFindStat = true
             let sampleRate = Float64(first.sampleRate)
             let bitDepth = Int32(first.bitDepth)
-
-            // Same track already switched to this sample rate; skip to avoid switching repeatedly within one song.
-            if let currentTrack = currentTrack,
-               let cachedSampleRate = trackAndSample[currentTrack],
-               cachedSampleRate == sampleRate,
-               defaultDevice?.nominalSampleRate == sampleRate {
-                print("same track, sample rate already applied, skip")
-                return
-            }
 
             guard let formats = self.getFormats(bestStat: first, device: defaultDevice!) else { return }
 
@@ -299,6 +302,12 @@ class OutputDevices: ObservableObject {
         self.previousTrack = self.currentTrack
         self.currentTrack = MediaTrack(trackInfo: newTrack)
         if self.previousTrack != self.currentTrack {
+            // Unlock the new track so its sample rate can be applied. The lock is
+            // per-track and must not leak across replays of the same song.
+            if let currentTrack = currentTrack {
+                self.trackAndSample.removeValue(forKey: currentTrack)
+                self.trackAndBitDepth.removeValue(forKey: currentTrack)
+            }
             // Decoder log entries are timestamped when the new track starts decoding,
             // which can be slightly before the MediaRemote event arrives. Use the event
             // time minus a small tolerance, so the new track's logs pass the filter
