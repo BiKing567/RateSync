@@ -12,22 +12,9 @@ import SimplyCoreAudio
 struct ContentView: View {
     @EnvironmentObject var outputDevices: OutputDevices
     
-    private var sampleRateText: String? {
-        guard let currentSampleRate = outputDevices.currentSampleRate else { return nil }
-        if outputDevices.enableBitDepthDetection {
-            if let bitDepth = outputDevices.currentBitDepth {
-                return String(format: "%.1f kHz / %d bit", currentSampleRate, bitDepth)
-            } else {
-                return String(format: "%.1f kHz / ? bit", currentSampleRate)
-            }
-        } else {
-            return String(format: "%.1f kHz", currentSampleRate)
-        }
-    }
-    
     var body: some View {
         VStack {
-            if let text = sampleRateText {
+            if let text = outputDevices.formattedSampleRate {
                 Text(text)
                     .font(.system(size: 23, weight: .semibold, design: .default))
             }
@@ -44,6 +31,7 @@ struct ContentView: View {
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
+            .environmentObject(OutputDevices())
     }
 }
 

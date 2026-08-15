@@ -55,20 +55,10 @@ class Defaults: ObservableObject {
         }
     }
     
-    @Published var userPreferBitDepthDetection: Bool
-    
-    
-    @MainActor func setPreferBitDepthDetection(newValue: Bool) {
-        UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDetection)
-        self.userPreferBitDepthDetection = newValue
-    }
-    
-    @MainActor func setShellScriptPath(newValue: String?) {
-        self.shellScriptPath = newValue
-    }
-    
-    @MainActor func setPreferSampleRateMultiple(newValue: Bool) {
-        self.userPreferSampleRateMultiples = newValue
+    @Published var userPreferBitDepthDetection: Bool {
+        willSet {
+            UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDetection)
+        }
     }
 
     var statusBarItemTitle: String {

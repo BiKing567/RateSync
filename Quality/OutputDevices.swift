@@ -28,8 +28,6 @@ class OutputDevices: ObservableObject {
     private var timerCancellable: AnyCancellable?
     private var outputSelectionCancellable: AnyCancellable?
     
-    private var consoleQueue = DispatchQueue(label: "consoleQueue", qos: .userInteractive)
-    
     private var processQueue = DispatchQueue(label: "processQueue", qos: .userInitiated)
     
     private var previousSampleRate: Float64?
@@ -203,7 +201,8 @@ class OutputDevices: ObservableObject {
                 print("same track, bit depth changed, re-applying format")
             }
 
-            guard let formats = self.getFormats(bestStat: first, device: defaultDevice!) else { return }
+            guard let defaultDevice = defaultDevice,
+                  let formats = self.getFormats(device: defaultDevice) else { return }
 
             // https://stackoverflow.com/a/65060134
             var nearest = supported.min(by: {
@@ -235,7 +234,7 @@ class OutputDevices: ObservableObject {
                     self.setFormats(device: defaultDevice, format: suitableFormat)
                 }
                 else if sampleRateChanged { // bit depth disabled
-                    defaultDevice?.setNominalSampleRate(suitableFormat.mSampleRate)
+                    defaultDevice.setNominalSampleRate(suitableFormat.mSampleRate)
                 }
                 self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel), runUserScript: formatChanged)
                 if let currentTrack = currentTrack {
@@ -255,7 +254,7 @@ class OutputDevices: ObservableObject {
     }
 
 
-    func getFormats(bestStat: CMPlayerStats, device: AudioDevice) -> [AudioStreamBasicDescription]? {
+    func getFormats(device: AudioDevice) -> [AudioStreamBasicDescription]? {
         // new sample rate + bit depth detection route
         let streams = device.streams(scope: .output)
         let availableFormats = streams?.first?.availablePhysicalFormats?.compactMap({$0.mFormat})
@@ -277,24 +276,26 @@ class OutputDevices: ObservableObject {
             let readableSampleRate = sampleRate / 1000
             self.currentSampleRate = readableSampleRate
             self.currentBitDepth = bitDepth
-            
-            let delegate = AppDelegate.instance
-            
-            if enableBitDepthDetection {
-                if let bitDepth = bitDepth {
-                    delegate?.statusItemTitle = String(format: "%.1f kHz / %d bit", readableSampleRate, bitDepth)
-                } else {
-                    delegate?.statusItemTitle = String(format: "%.1f kHz / ? bit", readableSampleRate)
-                }
-            } else {
-                delegate?.statusItemTitle = String(format: "%.1f kHz", readableSampleRate)
-            }
         }
         if runUserScript {
             self.runUserScript(sampleRate, bitDepth: bitDepth)
         }
     }
     
+    /// Shared formatted text for the menu bar label and the menu content view.
+    var formattedSampleRate: String? {
+        guard let currentSampleRate = currentSampleRate else { return nil }
+        if enableBitDepthDetection {
+            if let bitDepth = currentBitDepth {
+                return String(format: "%.1f kHz / %d bit", currentSampleRate, bitDepth)
+            } else {
+                return String(format: "%.1f kHz / ? bit", currentSampleRate)
+            }
+        } else {
+            return String(format: "%.1f kHz", currentSampleRate)
+        }
+    }
+
     func runUserScript(_ sampleRate: Float64, bitDepth: Int?) {
         guard let scriptPath = Defaults.shared.shellScriptPath else { return }
         let argumentSampleRate = String(Int(sampleRate))

@@ -10,8 +10,6 @@ import Cocoa
 //import PrivateMediaRemote
 import MediaRemoteAdapter
 
-fileprivate let kMusicAppBundle = "com.apple.Music"
-
 class MediaRemoteController {
     
     private let controller: MediaController
