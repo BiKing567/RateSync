@@ -12,7 +12,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // https://stackoverflow.com/a/66160164
     static private(set) var instance: AppDelegate! = nil
     var outputDevices: OutputDevices!
-    private let defaults = Defaults.shared
     
     func checkPermissions() {
         do {
