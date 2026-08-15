@@ -75,6 +75,9 @@ struct MenuView: View {
             Menu {
                 Text("Version - \(currentVersion)")
                 Text("Build - \(currentBuild)")
+                Button("检查更新...") {
+                    UpdateChecker.shared.checkForUpdates(showUpToDate: true)
+                }
             } label: {
                 Text("About")
             }

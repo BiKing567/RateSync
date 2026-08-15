@@ -22,5 +22,11 @@ class MenuBarController {
         let outputDevices = OutputDevices()
         self.outputDevices = outputDevices
         self.mrController = MediaRemoteController(outputDevices: outputDevices)
+        
+        // Automatically check for updates shortly after launch.
+        // Only prompts when a newer release is available.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            UpdateChecker.shared.checkForUpdates()
+        }
     }
 }
