@@ -6,6 +6,7 @@
 //
 
 import Cocoa
+import OSLog
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     
