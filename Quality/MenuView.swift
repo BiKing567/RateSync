@@ -1,6 +1,6 @@
 //
 //  MenuView.swift
-//  LosslessSwitcher
+//  RateSync
 //
 //  Created by Vincent Neo on 23/6/25.
 //
@@ -11,6 +11,21 @@ struct MenuView: View {
     
     @EnvironmentObject private var outputDevices: OutputDevices
     @EnvironmentObject private var defaults: Defaults
+    
+    /// Monitor-source options shown in the menu. `bundleIdentifier == nil`
+    /// means "every app". Extend this list to support more players.
+    private struct MonitorSourceOption: Identifiable {
+        let id = UUID()
+        let labelKey: String
+        let bundleIdentifier: String?
+    }
+    
+    private let monitorSourceOptions: [MonitorSourceOption] = [
+        MonitorSourceOption(labelKey: "Apple Music", bundleIdentifier: Defaults.appleMusicBundleIdentifier),
+        MonitorSourceOption(labelKey: "Spotify", bundleIdentifier: Defaults.spotifyBundleIdentifier),
+        MonitorSourceOption(labelKey: "NetEase Music", bundleIdentifier: Defaults.neteaseMusicBundleIdentifier),
+        MonitorSourceOption(labelKey: "All Apps", bundleIdentifier: nil),
+    ]
     
     var body: some View {
         VStack {
@@ -46,6 +61,17 @@ struct MenuView: View {
                 }
             }
             
+            Button {
+                defaults.autoEQEnabled.toggle()
+            } label: {
+                HStack {
+                    Text("Auto EQ by Genre (Apple Music)")
+                    if defaults.autoEQEnabled {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            
             Menu {
                 Button {
                     outputDevices.selectedOutputDevice = nil
@@ -70,6 +96,25 @@ struct MenuView: View {
                 }
             } label: {
                 Text("Selected Device")
+            }
+            
+            Menu {
+                ForEach(monitorSourceOptions) { option in
+                    Button {
+                        defaults.monitoredBundleIdentifier = option.bundleIdentifier
+                        // Something may already be playing: re-evaluate it
+                        // against the new source right away instead of
+                        // waiting for the next MediaRemote event.
+                        outputDevices.reevaluateNowPlaying()
+                    } label: {
+                        if defaults.monitoredBundleIdentifier == option.bundleIdentifier {
+                            Image(systemName: "checkmark")
+                        }
+                        Text(LocalizedStringKey(option.labelKey))
+                    }
+                }
+            } label: {
+                Text("Monitor Source")
             }
             
             Menu {
@@ -111,7 +156,7 @@ struct MenuView: View {
             Button {
                 NSApp.terminate(self)
             } label: {
-                Text("Quit LosslessSwitcher")
+                Text("Quit RateSync")
             }
         }
     }

@@ -5,10 +5,18 @@
 /* Menu toggles */
 "Bit Depth Switching" = "位深度切换";
 "Prefer Closest Sample Rate Multiple" = "偏好最接近的采样率倍数";
+"Auto EQ by Genre (Apple Music)" = "按流派自动切换均衡器（仅 Apple Music）";
 
 /* Device selection */
 "Default Device" = "默认设备";
 "Selected Device" = "已选设备";
+
+/* Monitoring source */
+"Monitor Source" = "监听来源";
+"All Apps" = "全部 App";
+"Apple Music" = "Apple Music";
+"Spotify" = "Spotify";
+"NetEase Music" = "网易云音乐";
 
 /* About menu */
 "About" = "关于";
@@ -25,7 +33,7 @@
 "Select a script that should be invoked when sample rate changes." = "选择在采样率变化时应执行的脚本。";
 
 /* Quit */
-"Quit LosslessSwitcher" = "退出 LosslessSwitcher";
+"Quit RateSync" = "退出 RateSync";
 
 /* Sample rate label fallback */
 "Unknown" = "未知";
@@ -34,8 +42,8 @@
 "Requires Privileges" = "需要管理员权限";
 
 /* Alert messages */
-"LosslessSwitcher requires Administrator privileges in order to detect each song's lossless sample rate in the Music app." = "LosslessSwitcher 需要管理员权限以在音乐 App 中检测每首歌曲的无损采样率。";
-"LosslessSwitcher could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work." = "LosslessSwitcher 无法检查您的账户是否具有管理员权限。若缺少管理员权限，采样率检测将无法工作。";
+"RateSync requires Administrator privileges in order to detect each song's lossless sample rate in the Music app." = "RateSync 需要管理员权限以在音乐 App 中检测每首歌曲的无损采样率。";
+"RateSync could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work." = "RateSync 无法检查您的账户是否具有管理员权限。若缺少管理员权限，采样率检测将无法工作。";
 
 /* Initial status item text */
 "Loading..." = "加载中...";

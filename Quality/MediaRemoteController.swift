@@ -6,6 +6,7 @@
 //
 
 import Cocoa
+import OSLog
 import MediaRemoteAdapter
 
 class MediaRemoteController {
@@ -19,8 +20,8 @@ class MediaRemoteController {
         controller.startListening()
         
         controller.onTrackInfoReceived = { [weak outputDevices] trackInfo in
-            guard let trackInfo else { return }
-            print("track \(trackInfo.payload.uniqueIdentifier) \(trackInfo.payload.title ?? "nil")")
+            guard let trackInfo, self.isMonitored(trackInfo) else { return }
+            Logger.switching.info("track \(trackInfo.payload.uniqueIdentifier) \(trackInfo.payload.title ?? "nil")")
             let eventDate = Date()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 guard let outputDevices else { return }
@@ -28,6 +29,22 @@ class MediaRemoteController {
             }
         }
         
+    }
+
+    /// Filters Now Playing events by the user-selected monitoring source.
+    /// `monitoredBundleIdentifier == nil` means monitor every app.
+    /// Falls back to resolving the bundle id from the event's PID when the
+    /// adapter did not include one (its PID lookup can race).
+    private func isMonitored(_ trackInfo: TrackInfo) -> Bool {
+        guard let monitored = Defaults.shared.monitoredBundleIdentifier else { return true }
+        if trackInfo.payload.bundleIdentifier == monitored {
+            return true
+        }
+        guard let pid = trackInfo.payload.PID, pid > 0,
+              let app = NSRunningApplication(processIdentifier: pid) else {
+            return false
+        }
+        return app.bundleIdentifier == monitored
     }
     
     deinit {

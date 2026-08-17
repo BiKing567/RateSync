@@ -9,23 +9,32 @@ import Foundation
 
 class Defaults: ObservableObject {
     static let shared = Defaults()
-    private let kUserPreferIconStatusBarItem = "com.vincent-neo.LosslessSwitcher-Key-UserPreferIconStatusBarItem"
-    private let kSelectedDeviceUID = "com.vincent-neo.LosslessSwitcher-Key-SelectedDeviceUID"
-    private let kUserPreferBitDepthDetection = "com.vincent-neo.LosslessSwitcher-Key-BitDepthDetection"
+    static let appleMusicBundleIdentifier = "com.apple.Music"
+    static let spotifyBundleIdentifier = "com.spotify.client"
+    static let neteaseMusicBundleIdentifier = "com.netease.163music"
+    private let kUserPreferIconStatusBarItem = "com.vincent-neo.RateSync-Key-UserPreferIconStatusBarItem"
+    private let kSelectedDeviceUID = "com.vincent-neo.RateSync-Key-SelectedDeviceUID"
+    private let kUserPreferBitDepthDetection = "com.vincent-neo.RateSync-Key-BitDepthDetection"
     private let kShellScriptPath = "KeyShellScriptPath"
     private let kUserPreferSampleRateMultiples = "PreferSampleRateMultiples"
+    private let kMonitoredBundleIdentifier = "com.vincent-neo.RateSync-Key-MonitoredBundleIdentifier"
+    private let kAutoEQEnabled = "com.vincent-neo.RateSync-Key-AutoEQEnabled"
     
     private init() {
         UserDefaults.standard.register(defaults: [
             kUserPreferIconStatusBarItem : true,
             kUserPreferBitDepthDetection : false,
-            kUserPreferSampleRateMultiples : false
+            kUserPreferSampleRateMultiples : false,
+            kMonitoredBundleIdentifier : Defaults.appleMusicBundleIdentifier,
+            kAutoEQEnabled : false
         ])
         
         self.shellScriptPath = UserDefaults.standard.string(forKey: kShellScriptPath)
         self.userPreferIconStatusBarItem = UserDefaults.standard.bool(forKey: kUserPreferIconStatusBarItem)
         self.userPreferBitDepthDetection = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDetection)
         self.userPreferSampleRateMultiples = UserDefaults.standard.bool(forKey: kUserPreferSampleRateMultiples)
+        self.monitoredBundleIdentifier = UserDefaults.standard.string(forKey: kMonitoredBundleIdentifier)
+        self.autoEQEnabled = UserDefaults.standard.bool(forKey: kAutoEQEnabled)
     }
     
     @Published var userPreferSampleRateMultiples: Bool {
@@ -58,6 +67,27 @@ class Defaults: ObservableObject {
     @Published var userPreferBitDepthDetection: Bool {
         willSet {
             UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDetection)
+        }
+    }
+
+    /// Which app's playback triggers sample rate switching.
+    /// `nil` means monitor every app that reports Now Playing info.
+    @Published var monitoredBundleIdentifier: String? {
+        willSet {
+            if let newValue = newValue {
+                UserDefaults.standard.set(newValue, forKey: kMonitoredBundleIdentifier)
+            } else {
+                UserDefaults.standard.removeObject(forKey: kMonitoredBundleIdentifier)
+            }
+        }
+    }
+
+    /// Auto-switch Apple Music's built-in EQ preset to match the genre of
+    /// the currently playing track (Apple Music only; needs Accessibility
+    /// permission for UI automation).
+    @Published var autoEQEnabled: Bool {
+        willSet {
+            UserDefaults.standard.set(newValue, forKey: kAutoEQEnabled)
         }
     }
 
