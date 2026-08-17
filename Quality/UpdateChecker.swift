@@ -12,7 +12,7 @@ import AppKit
 class UpdateChecker {
     static let shared = UpdateChecker()
     
-    private let latestReleaseURL = URL(string: "https://api.github.com/repos/BiKing567/LosslessSwitcher/releases/latest")!
+    private let latestReleaseURL = URL(string: "https://api.github.com/repos/BiKing567/RateSync/releases/latest")!
     
     /// Check for updates.
     /// - Parameter showUpToDate: whether to show a "you are up to date" alert when
@@ -20,7 +20,7 @@ class UpdateChecker {
     func checkForUpdates(showUpToDate: Bool = false) {
         var request = URLRequest(url: latestReleaseURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("LosslessSwitcher/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        request.setValue("RateSync/\(currentVersion)", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
             guard let self = self else { return }

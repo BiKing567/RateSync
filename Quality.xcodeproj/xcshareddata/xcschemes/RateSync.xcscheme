@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1272AA93280DBB4900FD72BA"
-               BuildableName = "LosslessSwitcher.app"
-               BlueprintName = "LosslessSwitcher"
+               BuildableName = "RateSync.app"
+               BlueprintName = "RateSync"
                ReferencedContainer = "container:Quality.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1272AA93280DBB4900FD72BA"
-            BuildableName = "LosslessSwitcher.app"
-            BlueprintName = "LosslessSwitcher"
+            BuildableName = "RateSync.app"
+            BlueprintName = "RateSync"
             ReferencedContainer = "container:Quality.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,8 +62,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1272AA93280DBB4900FD72BA"
-            BuildableName = "LosslessSwitcher.app"
-            BlueprintName = "LosslessSwitcher"
+            BuildableName = "RateSync.app"
+            BlueprintName = "RateSync"
             ReferencedContainer = "container:Quality.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

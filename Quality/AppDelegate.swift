@@ -18,7 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if try !User.current.isAdmin() {
                 let alert = NSAlert()
                 alert.messageText = NSLocalizedString("Requires Privileges", comment: "Alert title")
-                alert.informativeText = NSLocalizedString("LosslessSwitcher requires Administrator privileges in order to detect each song's lossless sample rate in the Music app.", comment: "Alert message when admin privileges are required")
+                alert.informativeText = NSLocalizedString("RateSync requires Administrator privileges in order to detect each song's lossless sample rate in the Music app.", comment: "Alert message when admin privileges are required")
                 alert.alertStyle = .critical
                 alert.runModal()
                 NSApp.terminate(self)
@@ -27,7 +27,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         catch {
             let alert = NSAlert()
             alert.messageText = NSLocalizedString("Requires Privileges", comment: "Alert title")
-            alert.informativeText = NSLocalizedString("LosslessSwitcher could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work.", comment: "Alert message when admin check fails")
+            alert.informativeText = NSLocalizedString("RateSync could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work.", comment: "Alert message when admin check fails")
             alert.alertStyle = .warning
             alert.runModal()
         }

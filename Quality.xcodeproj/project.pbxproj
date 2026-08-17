@@ -23,12 +23,13 @@
 		1293436B28131591002E19A8 /* CurrentUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1293436A28131591002E19A8 /* CurrentUser.swift */; };
 		12AFF5C12811AD40001CC6ED /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12AFF5C02811AD40001CC6ED /* AppDelegate.swift */; };
 		A1B2C3D40000000000000002 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000001 /* UpdateChecker.swift */; };
-		BF0C90C82B20BFD6002F99C9 /* LosslessSwitcher.sdef in Resources */ = {isa = PBXBuildFile; fileRef = BF0C90C72B20BFD6002F99C9 /* LosslessSwitcher.sdef */; };
+		BF0C90C82B20BFD6002F99C9 /* RateSync.sdef in Resources */ = {isa = PBXBuildFile; fileRef = BF0C90C72B20BFD6002F99C9 /* RateSync.sdef */; };
 		BF0C90CA2B20C163002F99C9 /* ScriptableApplicationCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */; };
 		BF342D7C2E0935980032F398 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = BF342D7B2E0935980032F398 /* MediaRemoteAdapter */; };
 		BF342D7D2E0937D20032F398 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = BF342D7B2E0935980032F398 /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		BF342D802E0947890032F398 /* SampleRateLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D7F2E0947890032F398 /* SampleRateLabel.swift */; };
 		BF342D822E0948730032F398 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D812E0948730032F398 /* MenuView.swift */; };
+		BF5A88A12E0F00000032F001 /* MediaRemoteSampleRateProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */; };
 		BF5A87BA2E01D746002033D6 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A87B92E01D746002033D6 /* MenuBarController.swift */; };
 		BF7E0D09296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */; };
 		BF9900022E0999990032F001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BF9900032E0999990032F001 /* Localizable.strings */; };
@@ -54,7 +55,7 @@
 		1234F50F281E9520007EC9F5 /* MediaRemoteController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRemoteController.swift; sourceTree = "<group>"; };
 		1254A79B2813FB9400241107 /* Defaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Defaults.swift; sourceTree = "<group>"; };
 		1254A79D2814024300241107 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		1272AA94280DBB4900FD72BA /* LosslessSwitcher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LosslessSwitcher.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1272AA94280DBB4900FD72BA /* RateSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RateSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1272AA97280DBB4900FD72BA /* QualityApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityApp.swift; sourceTree = "<group>"; };
 		1272AA99280DBB4900FD72BA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		1272AA9B280DBB4B00FD72BA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -66,10 +67,11 @@
 		1293436A28131591002E19A8 /* CurrentUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentUser.swift; sourceTree = "<group>"; };
 		12AFF5C02811AD40001CC6ED /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000001 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
-		BF0C90C72B20BFD6002F99C9 /* LosslessSwitcher.sdef */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = LosslessSwitcher.sdef; sourceTree = "<group>"; };
+		BF0C90C72B20BFD6002F99C9 /* RateSync.sdef */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = RateSync.sdef; sourceTree = "<group>"; };
 		BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptableApplicationCommand.swift; sourceTree = "<group>"; };
 		BF342D7F2E0947890032F398 /* SampleRateLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleRateLabel.swift; sourceTree = "<group>"; };
 		BF342D812E0948730032F398 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
+		BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRemoteSampleRateProbe.swift; sourceTree = "<group>"; };
 		BF5A87B92E01D746002033D6 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioStreamBasicDescription+Equatable.swift"; sourceTree = "<group>"; };
 		BF9900012E0999990032F001 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh-Hans; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
@@ -108,7 +110,7 @@
 		1272AA95280DBB4900FD72BA /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1272AA94280DBB4900FD72BA /* LosslessSwitcher.app */,
+				1272AA94280DBB4900FD72BA /* RateSync.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -134,10 +136,11 @@
 				1254A79B2813FB9400241107 /* Defaults.swift */,
 				1234F50D281E8F07007EC9F5 /* MediaTrack.swift */,
 				1234F50F281E9520007EC9F5 /* MediaRemoteController.swift */,
+				BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */,
 				127C972C281FCF000087313B /* AppVersion.swift */,
 				BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */,
 				BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */,
-				BF0C90C72B20BFD6002F99C9 /* LosslessSwitcher.sdef */,
+				BF0C90C72B20BFD6002F99C9 /* RateSync.sdef */,
 				BF9900032E0999990032F001 /* Localizable.strings */,
 			);
 			path = Quality;
@@ -154,9 +157,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		1272AA93280DBB4900FD72BA /* LosslessSwitcher */ = {
+		1272AA93280DBB4900FD72BA /* RateSync */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1272AAA3280DBB4B00FD72BA /* Build configuration list for PBXNativeTarget "LosslessSwitcher" */;
+			buildConfigurationList = 1272AAA3280DBB4B00FD72BA /* Build configuration list for PBXNativeTarget "RateSync" */;
 			buildPhases = (
 				1272AA90280DBB4900FD72BA /* Sources */,
 				1272AA91280DBB4900FD72BA /* Frameworks */,
@@ -167,14 +170,14 @@
 			);
 			dependencies = (
 			);
-			name = LosslessSwitcher;
+			name = RateSync;
 			packageProductDependencies = (
 				1272AAB0280DC71B00FD72BA /* Sweep */,
 				1221F3F8280F10A3003E8B77 /* SimplyCoreAudio */,
 				BF342D7B2E0935980032F398 /* MediaRemoteAdapter */,
 			);
 			productName = Quality;
-			productReference = 1272AA94280DBB4900FD72BA /* LosslessSwitcher.app */;
+			productReference = 1272AA94280DBB4900FD72BA /* RateSync.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -211,7 +214,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				1272AA93280DBB4900FD72BA /* LosslessSwitcher */,
+				1272AA93280DBB4900FD72BA /* RateSync */,
 			);
 		};
 /* End PBXProject section */
@@ -222,7 +225,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1272AA9F280DBB4B00FD72BA /* Preview Assets.xcassets in Resources */,
-				BF0C90C82B20BFD6002F99C9 /* LosslessSwitcher.sdef in Resources */,
+				BF0C90C82B20BFD6002F99C9 /* RateSync.sdef in Resources */,
 				1272AA9C280DBB4B00FD72BA /* Assets.xcassets in Resources */,
 				BF9900022E0999990032F001 /* Localizable.strings in Resources */,
 			);
@@ -247,6 +250,7 @@
 				1272AAAE280DC68A00FD72BA /* CMPlayerStuff.swift in Sources */,
 				1272AAAC280DC5E900FD72BA /* Console.swift in Sources */,
 				1234F510281E9520007EC9F5 /* MediaRemoteController.swift in Sources */,
+				BF5A88A12E0F00000032F001 /* MediaRemoteSampleRateProbe.swift in Sources */,
 				1272AA9A280DBB4900FD72BA /* ContentView.swift in Sources */,
 				1293436B28131591002E19A8 /* CurrentUser.swift in Sources */,
 				1272AA98280DBB4900FD72BA /* QualityApp.swift in Sources */,
@@ -407,8 +411,8 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.vincent-neo.LosslessSwitcher";
-				PRODUCT_NAME = LosslessSwitcher;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.vincent-neo.RateSync";
+				PRODUCT_NAME = RateSync;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
@@ -442,8 +446,8 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.vincent-neo.LosslessSwitcher";
-				PRODUCT_NAME = LosslessSwitcher;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.vincent-neo.RateSync";
+				PRODUCT_NAME = RateSync;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
@@ -464,7 +468,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1272AAA3280DBB4B00FD72BA /* Build configuration list for PBXNativeTarget "LosslessSwitcher" */ = {
+		1272AAA3280DBB4B00FD72BA /* Build configuration list for PBXNativeTarget "RateSync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1272AAA4280DBB4B00FD72BA /* Debug */,

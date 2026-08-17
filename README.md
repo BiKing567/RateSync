@@ -3,35 +3,35 @@
 
 </p>
 
-# LosslessSwitcher 汉化版
+# RateSync 汉化版
 
-> 本项目基于 [vincentneo/LosslessSwitcher](https://github.com/vincentneo/LosslessSwitcher)（GPL-3.0）汉化并修复而来，感谢原作者 Vincent Neo 开发了这款优秀的开源应用。
+> 本项目基于 [vincentneo/RateSync](https://github.com/vincentneo/RateSync)（GPL-3.0）汉化并修复而来，感谢原作者 Vincent Neo 开发了这款优秀的开源应用。
 
-LosslessSwitcher 会自动将当前音频输出设备的采样率切换到与 Apple Music 正在播放的无损歌曲一致的采样率。
+RateSync 会自动将当前音频输出设备的采样率切换到与 Apple Music 正在播放的无损歌曲一致的采样率。
 
-例如，如果下一首播放的歌曲是采样率为 192kHz 的 Hi-Res 无损曲目，LosslessSwitcher 会尽快将设备采样率切换至 192kHz。
+例如，如果下一首播放的歌曲是采样率为 192kHz 的 Hi-Res 无损曲目，RateSync 会尽快将设备采样率切换至 192kHz。
 
 当下一首歌曲的采样率较低时，则会做相反的处理。
 
 ## 安装
 
 ### 适用于 macOS Big Sur 11.4 至 macOS Sonoma 14.x
-请使用 1.x 版本的发行版（上游原版），例如 [1.0](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.0)、1.1 或 [1.1.1 测试版](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.1-beta2)。
+请使用 1.x 版本的发行版（上游原版），例如 [1.0](https://github.com/vincentneo/RateSync/releases/tag/1.0)、1.1 或 [1.1.1 测试版](https://github.com/vincentneo/RateSync/releases/tag/1.1.1-beta2)。
 1.x 版本同样适用于 macOS Sequoia 15.3.1 及更早版本。
 
-你可以在此处找到 1.x 分支的最新稳定版（上游原版）：[v1.1 下载链接](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.0)
+你可以在此处找到 1.x 分支的最新稳定版（上游原版）：[v1.1 下载链接](https://github.com/vincentneo/RateSync/releases/tag/1.1.0)
 
 ### 适用于 macOS Sequoia 15.4 及更新版本
-汉化版基于上游 2.0 分支开发，请下载本仓库的发行版：[LosslessSwitcher 2.3 汉化版（v2.3）](https://github.com/BiKing567/LosslessSwitcher/releases/tag/v2.3)。
-上游原版的 2.0 测试版见：[v2.0 Beta 1](https://github.com/vincentneo/LosslessSwitcher/releases/tag/2.0-beta1)。
+汉化版基于上游 2.0 分支开发，请下载本仓库的发行版：[RateSync 2.3 汉化版（v2.3）](https://github.com/BiKing567/RateSync/releases/tag/v2.3)。
+上游原版的 2.0 测试版见：[v2.0 Beta 1](https://github.com/vincentneo/RateSync/releases/tag/2.0-beta1)。
 
 #### 安装步骤
 1. 下载所需版本的 `.dmg` 安装镜像。
 2. 将应用拖入"应用程序"文件夹。
 
-如果你希望开机自动运行，可以在系统设置中添加 LosslessSwitcher：
+如果你希望开机自动运行，可以在系统设置中添加 RateSync：
 ```
-> 用户与群组 > 登录项 > 添加 LosslessSwitcher 应用
+> 用户与群组 > 登录项 > 添加 RateSync 应用
 ```
 
 ## 应用详情
@@ -64,18 +64,18 @@ LosslessSwitcher 会自动将当前音频输出设备的采样率切换到与 Ap
 ## 前置条件
 由于应用的工作方式，该应用没有、也无法进行沙盒化。
 由于使用了 `OSLog` API，还有以下要求：
-- 运行 LosslessSwitcher 的用户必须是**管理员**。这一点未经测试，是基于[Apple Developer Forums 上这个帖子](https://developer.apple.com/forums/thread/677068)的推断。
+- 运行 RateSync 的用户必须是**管理员**。这一点未经测试，是基于[Apple Developer Forums 上这个帖子](https://developer.apple.com/forums/thread/677068)的推断。
 - Apple Music 应用必须开启无损模式。（当然，这是必然的）
 
 除此之外，它应该可以在任何运行 macOS 11.4 或更高版本的 Mac 上运行。
 
 ## 免责声明
-使用 LosslessSwitcher 即表示您同意：在任何情况下，开发者或任何贡献者均不对因以任何形式使用 LosslessSwitcher 而直接或间接导致的任何索赔、损害、损失、费用、成本或责任，或您遭受的任何其他后果承担任何责任。
+使用 RateSync 即表示您同意：在任何情况下，开发者或任何贡献者均不对因以任何形式使用 RateSync 而直接或间接导致的任何索赔、损害、损失、费用、成本或责任，或您遭受的任何其他后果承担任何责任。
 
 ## 已测试设备
 
-以下是 LosslessSwitcher 用户测试可用的部分设备组合。
-尽管如此，仍需提醒您自行承担使用 LosslessSwitcher 的风险。
+以下是 RateSync 用户测试可用的部分设备组合。
+尽管如此，仍需提醒您自行承担使用 RateSync 的风险。
 
 ### 版本 1.x
 | CPU | Mac 型号 | macOS 版本 | 测试版 macOS？ | 音频设备 |
@@ -155,13 +155,13 @@ LosslessSwitcher 会自动将当前音频输出设备的采样率切换到与 Ap
 
 你可以修改本 README 并提交新的 Pull Request，将你的设备添加到列表中！
 
-请注意，Steven Slate Audio VSX 软件可能与 LosslessSwitcher 不完全兼容，两者可能会相互干扰。更多信息请参阅[讨论 #100](https://github.com/vincentneo/LosslessSwitcher/discussions/100)。
+请注意，Steven Slate Audio VSX 软件可能与 RateSync 不完全兼容，两者可能会相互干扰。更多信息请参阅[讨论 #100](https://github.com/vincentneo/RateSync/discussions/100)。
 
 ## 许可证
-LosslessSwitcher 采用 GPL-3.0 许可证。
+RateSync 采用 GPL-3.0 许可证。
 
 ## 喜欢这个项目？
-如果你认可这个应用的开发，欢迎分享给更多人，让更多人了解 LosslessSwitcher。
+如果你认可这个应用的开发，欢迎分享给更多人，让更多人了解 RateSync。
 感谢使用！
 
 ## 依赖
