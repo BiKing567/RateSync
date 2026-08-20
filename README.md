@@ -4,7 +4,7 @@
 
 # RateSync 3.0 汉化版
 
-> 本项目基于 [vincentneo/RateSync](https://github.com/vincentneo/RateSync)（GPL-3.0）汉化并修复而来，感谢原作者 Vincent Neo 开发了这款优秀的开源应用。
+> 本项目基于 [vincentneo/LosslessSwitcher](https://github.com/vincentneo/LosslessSwitcher)（GPL-3.0）汉化并修复而来，感谢原作者 Vincent Neo 开发了这款优秀的开源应用。
 
 RateSync 会自动将当前音频输出设备的采样率和位深度切换到与当前播放的无损歌曲一致的值。
 
@@ -17,14 +17,14 @@ RateSync 会自动将当前音频输出设备的采样率和位深度切换到�
 ## 安装
 
 ### 适用于 macOS Big Sur 11.4 至 macOS Sonoma 14.x
-请使用 1.x 版本的发行版（上游原版），例如 [1.0](https://github.com/vincentneo/RateSync/releases/tag/1.0)、1.1 或 [1.1.1 测试版](https://github.com/vincentneo/RateSync/releases/tag/1.1.1-beta2)。
+请使用 1.x 版本的发行版（上游原版），例如 [1.0](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.0)、1.1 或 [1.1.1 测试版](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.1-beta2)。
 1.x 版本同样适用于 macOS Sequoia 15.3.1 及更早版本。
 
-你可以在此处找到 1.x 分支的最新稳定版（上游原版）：[v1.1 下载链接](https://github.com/vincentneo/RateSync/releases/tag/1.1.0)
+你可以在此处找到 1.x 分支的最新稳定版（上游原版）：[v1.1 下载链接](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.0)
 
 ### 适用于 macOS Sequoia 15.4 及更新版本
 汉化版基于上游 2.0 分支开发，适用于 macOS Sequoia 15.4 及更新版本。当前版本为 RateSync 3.0 汉化版，最新发行版请前往 [Releases 页面](https://github.com/BiKing567/RateSync/releases) 下载。
-上游原版的 2.0 测试版见：[v2.0 Beta 1](https://github.com/vincentneo/RateSync/releases/tag/2.0-beta1)。
+上游原版的 2.0 测试版见：[v2.0 Beta 1](https://github.com/vincentneo/LosslessSwitcher/releases/tag/2.0-beta1)。
 
 #### 安装步骤
 1. 下载所需版本的 `.dmg` 安装镜像。
