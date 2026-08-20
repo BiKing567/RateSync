@@ -1,6 +1,6 @@
 //
 //  MediaTrack.swift
-//  LosslessSwitcher
+//  RateSync
 //
 //  Created by Vincent Neo on 1/5/22.
 //

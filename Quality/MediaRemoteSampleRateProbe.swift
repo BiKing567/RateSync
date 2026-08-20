@@ -1,6 +1,6 @@
 //
 //  MediaRemoteSampleRateProbe.swift
-//  LosslessSwitcher
+//  RateSync
 //
 //  Created by BiKing567 on 16/8/26.
 //

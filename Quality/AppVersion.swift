@@ -1,6 +1,6 @@
 //
 //  AppVersion.swift
-//  LosslessSwitcher
+//  RateSync
 //
 //  Created by Vincent Neo on 2/5/22.
 //

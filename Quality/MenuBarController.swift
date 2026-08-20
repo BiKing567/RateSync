@@ -1,6 +1,6 @@
 //
 //  MenuBarController.swift
-//  LosslessSwitcher
+//  RateSync
 //
 //  Created by Vincent Neo on 18/6/25.
 //

@@ -1,6 +1,6 @@
 //
 //  AudioStreamBasicDescription+Equatable.swift
-//  LosslessSwitcher
+//  RateSync
 //
 //  Created by Vincent Neo on 2/1/23.
 //

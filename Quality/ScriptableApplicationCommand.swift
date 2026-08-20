@@ -1,6 +1,6 @@
 //
 //  ScriptableApplicationCommand.swift
-//  LosslessSwitcher
+//  RateSync
 //
 //  Created by Vincent Neo on 6/12/23.
 //
