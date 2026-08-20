@@ -207,9 +207,11 @@ class OutputDevices: ObservableObject {
         guard let genre else { return nil }
         let g = genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch g {
-        case "摇滚", "摇滚乐", "rock", "alternative", "punk", "metal", "hard rock":
+        case "摇滚", "摇滚乐", "rock", "alternative", "punk", "metal", "hard rock", "j-rock", "jrock", "日语摇滚", "日本摇滚":
             return "摇滚乐"
-        case "流行", "流行乐", "pop", "mandopop", "c-pop", "k-pop", "cpop", "kpop", "synthpop":
+        case "流行", "流行乐", "pop", "mandopop", "c-pop", "k-pop", "cpop", "kpop", "synthpop",
+             "j-pop", "jpop", "japanese pop", "japanese", "日语流行", "日本流行", "日语", "日本",
+             "anime", "动漫", "动画", "j-pop/anime", "city pop":
             return "流行乐"
         case "古典", "classical", "opera", "orchestra", "chamber", "symphony":
             return "古典"
@@ -231,7 +233,7 @@ class OutputDevices: ObservableObject {
             return "诵读音乐"
         case "拉丁", "latin", "salsa", "reggaeton", "bossa nova":
             return "拉丁音乐"
-        case "休闲", "lounge", "easy listening", "chill", "lo-fi", "lofi", "氛围":
+        case "休闲", "lounge", "easy listening", "chill", "lo-fi", "lofi", "氛围", "演歌", "enka":
             return "平缓"
         default:
             return nil
@@ -246,9 +248,20 @@ class OutputDevices: ObservableObject {
     /// Apple Music only; no-op when the switch is off, the source is not
     /// Apple Music, the genre maps to no preset, or the preset is unchanged.
     func applyAppleMusicEQIfNeeded() {
-        guard Defaults.shared.autoEQEnabled, isAppleMusicSource else { return }
-        guard let genre = appleMusicGenre(),
-              let preset = Self.eqPreset(forGenre: genre) else {
+        guard Defaults.shared.autoEQEnabled else {
+            Logger.switching.info("[EQ] skipped: switch off")
+            return
+        }
+        guard isAppleMusicSource else {
+            Logger.switching.info("[EQ] skipped: source is not Apple Music (\(Self.resolveBundleIdentifier(track: self.currentTrack) ?? "unknown", privacy: .public))")
+            return
+        }
+        guard let genre = appleMusicGenre() else {
+            Logger.switching.info("[EQ] skipped: no genre")
+            return
+        }
+        guard let preset = Self.eqPreset(forGenre: genre) else {
+            Logger.switching.info("[EQ] skipped: genre \(genre, privacy: .public) maps to no preset")
             return
         }
         eqLock.lock()
@@ -257,40 +270,65 @@ class OutputDevices: ObservableObject {
             lastAppliedEQPreset = preset
         }
         eqLock.unlock()
-        guard !unchanged else { return }
-        Logger.switching.info("[EQ] genre \(genre) -> preset \(preset)")
+        guard !unchanged else {
+            Logger.switching.info("[EQ] skipped: preset \(preset, privacy: .public) already applied")
+            return
+        }
+        Logger.switching.info("[EQ] genre \(genre, privacy: .public) -> preset \(preset, privacy: .public)")
         DispatchQueue.global(qos: .userInitiated).async {
             self.setAppleMusicEQ(preset)
         }
     }
 
     /// Switches Apple Music's built-in EQ preset via UI automation.
-    /// AppleScript writes to EQ properties are read-only, so this uses
-    /// System Events (requires Accessibility permission): opens the EQ
-    /// window, picks the preset, ensures EQ is on, closes the window.
+    /// AppleScript writes to EQ properties are read-only, so System Events
+    /// (Accessibility + Automation permissions) is required. Music must be
+    /// activated for the menu action to take effect; the previously active
+    /// app is restored afterwards so focus returns quickly.
     func setAppleMusicEQ(_ preset: String) {
+        Logger.switching.info("[EQ] accessibility trusted: \(AXIsProcessTrusted(), privacy: .public)")
+        let previousFrontmost = NSWorkspace.shared.frontmostApplication
         let script = """
         tell application "Music" to activate
-        delay 0.4
+        delay 0.3
         tell application "System Events"
             tell process "Music"
-                keystroke "e" using {command down, shift down}
-                delay 0.5
+                -- Open the EQ window via the Window menu.
                 try
-                    click pop up button 1 of window 1
-                    delay 0.3
-                    click menu item "\(preset)" of menu 1 of pop up button 1 of window 1
-                    delay 0.2
-                    set value of checkbox 1 of window 1 to 1
+                    click menu item "均衡器" of menu 1 of menu bar item "窗口" of menu bar 1
+                on error
+                    click menu item "Equalizer" of menu 1 of menu bar item "Window" of menu bar 1
                 end try
-                keystroke "e" using {command down, shift down}
+                delay 0.4
+                set eqWin to (first window whose name contains "均衡器" or name contains "Equalizer")
+                click pop up button 1 of eqWin
+                delay 0.3
+                click menu item "\(preset)" of menu 1 of pop up button 1 of eqWin
+                delay 0.2
+                -- Ensure the equalizer is enabled. Setting the checkbox value
+                -- is unreliable; click it only when it is not checked.
+                if (value of checkbox 1 of eqWin) is 0 then
+                    click checkbox 1 of eqWin
+                end if
+                -- Close the EQ window again (toggle the menu item).
+                try
+                    click menu item "均衡器" of menu 1 of menu bar item "窗口" of menu bar 1
+                on error
+                    click menu item "Equalizer" of menu 1 of menu bar item "Window" of menu bar 1
+                end try
             end tell
         end tell
         """
         var error: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&error)
         if let error = error {
-            Logger.switching.info("[EQ] failed: \(error)")
+            Logger.switching.info("[EQ] failed: \(String(describing: error), privacy: .public)")
+        }
+        // Give the focus back to the app that was active before the switch.
+        if let previousFrontmost {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                previousFrontmost.activate(options: [.activateIgnoringOtherApps])
+            }
         }
     }
 
@@ -644,6 +682,8 @@ class OutputDevices: ObservableObject {
             self.renewTimer()
             // Track change: apply Apple Music's EQ preset for the new genre
             // (Apple Music only; no-op unless the auto-EQ switch is on).
+            // The dedupe is intentionally NOT reset here: tracks mapping to
+            // the same preset must not re-open the EQ window.
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.applyAppleMusicEQIfNeeded()
             }

@@ -1,13 +1,15 @@
 <p align="center">
-  <img width="550" alt="header image with app icon" src="https://user-images.githubusercontent.com/23420208/164895903-1c95fe89-6198-433a-9100-8d9af32ca24f.png">
+  <img width="200" alt="RateSync Icon" src="./RateSync_Icon.png">
 
 </p>
 
-# RateSync 汉化版
+# RateSync 3.0 汉化版
 
 > 本项目基于 [vincentneo/RateSync](https://github.com/vincentneo/RateSync)（GPL-3.0）汉化并修复而来，感谢原作者 Vincent Neo 开发了这款优秀的开源应用。
 
-RateSync 会自动将当前音频输出设备的采样率切换到与 Apple Music 正在播放的无损歌曲一致的采样率。
+RateSync 会自动将当前音频输出设备的采样率和位深度切换到与当前播放的无损歌曲一致的值。
+
+3.0 版本新增多应用监控支持，可同时检测 Apple Music、Spotify、网易云音乐的播放状态，通过 MediaRemote 框架探测获取当前播放信息。
 
 例如，如果下一首播放的歌曲是采样率为 192kHz 的 Hi-Res 无损曲目，RateSync 会尽快将设备采样率切换至 192kHz。
 
@@ -22,7 +24,7 @@ RateSync 会自动将当前音频输出设备的采样率切换到与 Apple Musi
 你可以在此处找到 1.x 分支的最新稳定版（上游原版）：[v1.1 下载链接](https://github.com/vincentneo/RateSync/releases/tag/1.1.0)
 
 ### 适用于 macOS Sequoia 15.4 及更新版本
-汉化版基于上游 2.0 分支开发，请下载本仓库的发行版：[RateSync 2.3 汉化版（v2.3）](https://github.com/BiKing567/RateSync/releases/tag/v2.3)。
+汉化版基于上游 2.0 分支开发，适用于 macOS Sequoia 15.4 及更新版本。当前版本为 RateSync 3.0 汉化版，最新发行版请前往 [Releases 页面](https://github.com/BiKing567/RateSync/releases) 下载。
 上游原版的 2.0 测试版见：[v2.0 Beta 1](https://github.com/vincentneo/RateSync/releases/tag/2.0-beta1)。
 
 #### 安装步骤
@@ -37,10 +39,12 @@ RateSync 会自动将当前音频输出设备的采样率切换到与 Apple Musi
 ## 应用详情
 
 应用的界面非常简单，大部分逻辑在于：
-1. 读取 Apple Music 的日志以获取歌曲的采样率。
-2. 将采样率设置为当前播放所使用设备的采样率。
+1. 通过 MediaRemote 框架探测当前播放的音频信息（采样率、位深度），这是 3.0 版本的主要检测方式。
+2. 同时支持通过 OSLog 读取 Apple Music 的日志以获取歌曲的采样率。
+3. 支持多应用监控：Apple Music、Spotify、网易云音乐。
+4. 将采样率和位深度设置为当前播放所使用设备的参数。
 
-因此，应用常驻于菜单栏。上方的截图展示了它唯一的界面元素——显示从 Apple Music 日志中解析出的采样率。
+因此，应用常驻于菜单栏。上方的截图展示了它唯一的界面元素——显示当前解析出的采样率。
 
 <img width="252" alt="应用截图，显示音乐音符图标作为 UI 按钮" src="https://user-images.githubusercontent.com/23420208/164895657-35a6d8a3-7e85-4c7c-bcba-9d03bfd88b4d.png">
 
@@ -133,6 +137,10 @@ RateSync 会自动将当前音频输出设备的采样率切换到与 Apple Musi
 | Apple Silicon | Mac mini (M2, 2023) | 15.1.1 | 否 | Sony NW-A55（USB DAC 模式） |
 | Apple Silicon | Mac mini (M4, 2024) | 15.3.1 | 否 | MOTU M2 |
 
+### 版本 3.0
+
+> 待测试
+
 ### 版本 2.x
 | CPU | Mac 型号 | macOS 版本 | 测试版 macOS？ | 音频设备 | 版本 |
 | --------------- | ---------------------------------------------------- | ------------------ | ----------- | -----------------------------------|------------|
@@ -167,4 +175,4 @@ RateSync 采用 GPL-3.0 许可证。
 ## 依赖
 - [Sweep](https://github.com/JohnSundell/Sweep)，作者 @JohnSundell，一个易于使用的 Swift 字符串扫描器。
 - [SimplyCoreAudio](https://github.com/rnine/SimplyCoreAudio)，作者 @rnine，一个让 CoreAudio 使用起来更加简单的框架。
-- [PrivateMediaRemote](https://github.com/PrivateFrameworks/MediaRemote)，作者 @DimitarNestorov，用于使用私有的媒体远程框架。
+- [MediaRemoteAdapter](https://github.com/ejbills/MediaRemoteAdapter)，用于适配私有的 MediaRemote 框架。

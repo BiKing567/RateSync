@@ -46,15 +46,24 @@ struct MenuView: View {
                 }
             }
             
-            Button {
-                defaults.autoEQEnabled.toggle()
-            } label: {
-                HStack {
-                    Text("Auto EQ by Genre (Apple Music)")
+            Menu {
+                Button {
+                    defaults.autoEQEnabled.toggle()
+                    // Apply immediately to the current track, without waiting
+                    // for the next track change.
                     if defaults.autoEQEnabled {
-                        Image(systemName: "checkmark")
+                        outputDevices.applyAppleMusicEQIfNeeded()
+                    }
+                } label: {
+                    HStack {
+                        Text("Auto EQ by Genre (Apple Music)")
+                        if defaults.autoEQEnabled {
+                            Image(systemName: "checkmark")
+                        }
                     }
                 }
+            } label: {
+                Text("Experimental Features")
             }
             
             Menu {

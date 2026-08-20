@@ -6,6 +6,7 @@
 "Bit Depth Switching" = "位深度切换";
 "Prefer Closest Sample Rate Multiple" = "偏好最接近的采样率倍数";
 "Auto EQ by Genre (Apple Music)" = "按流派自动切换均衡器（仅 Apple Music）";
+"Experimental Features" = "试验性功能";
 
 /* Device selection */
 "Default Device" = "默认设备";

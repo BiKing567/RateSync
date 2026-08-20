@@ -33,6 +33,16 @@ if [[ ! -d "$APP" ]]; then
     exit 1
 fi
 
+# ---- 2.5 证书签名（稳定 TCC 授权身份）----
+# 未签名/ad-hoc 签名 app 的辅助功能授权绑定二进制指纹，每次重新构建
+# 都会失效（表现为"每次重启权限都掉"）。使用固定的自签名证书签名后，
+# 授权按证书身份 + bundle id 记录，重新构建/更新不再丢失。
+# 证书：自签名 "RateSync Developer"（已导入本机登录钥匙串）
+SIGN_IDENTITY="${RATESYNC_SIGN_IDENTITY:-RateSync Developer}"
+echo "==> 证书签名 ${APP_NAME}（身份：${SIGN_IDENTITY}）"
+codesign --force --deep -s "$SIGN_IDENTITY" "$APP" || { echo "==> 错误：签名失败" >&2; exit 1; }
+codesign -dv "$APP" 2>&1 | grep -E "Signature|Authority" | head -3
+
 # ---- 3. 检查 node / npm ----
 echo "==> 检查 node / npm 环境"
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
