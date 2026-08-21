@@ -10,9 +10,9 @@ import OSLog
 import Cocoa
 
 /// Central logging for the sample-rate switching pipeline. Visible via
-/// `log stream --predicate 'subsystem == "com.vincent-neo.RateSync"'`
+/// `log stream --predicate 'subsystem == "com.biking.RateSync"'`
 extension Logger {
-    static let switching = Logger(subsystem: "com.vincent-neo.RateSync", category: "switching")
+    static let switching = Logger(subsystem: "com.biking.RateSync", category: "switching")
 }
 
 struct SimpleConsole {

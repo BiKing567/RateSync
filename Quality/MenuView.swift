@@ -25,22 +25,22 @@ struct MenuView: View {
             }
             
             Button {
-                defaults.userPreferBitDepthDetection.toggle()
+                defaults.userPreferSampleRateMultiples.toggle()
             } label: {
                 HStack {
-                    Text("Bit Depth Switching")
-                    if defaults.userPreferBitDepthDetection {
+                    Text("Prefer Closest Sample Rate Multiple")
+                    if defaults.userPreferSampleRateMultiples {
                         Image(systemName: "checkmark")
                     }
                 }
             }
             
             Button {
-                defaults.userPreferSampleRateMultiples.toggle()
+                defaults.userPreferBitDepthDisplay.toggle()
             } label: {
                 HStack {
-                    Text("Prefer Closest Sample Rate Multiple")
-                    if defaults.userPreferSampleRateMultiples {
+                    Text("菜单栏显示位深度")
+                    if defaults.userPreferBitDepthDisplay {
                         Image(systemName: "checkmark")
                     }
                 }

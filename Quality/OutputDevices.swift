@@ -20,8 +20,10 @@ class OutputDevices: ObservableObject {
     @Published var currentSampleRate: Float64?
     @Published var currentBitDepth: Int?
     @Published var enableBitDepthDetection = Defaults.shared.userPreferBitDepthDetection
+    @Published var showBitDepthInLabel = Defaults.shared.userPreferBitDepthDisplay
     
     private var enableBitDepthDetectionCancellable: AnyCancellable?
+    private var showBitDepthCancellable: AnyCancellable?
     
     private let coreAudio = SimplyCoreAudio()
     
@@ -29,12 +31,24 @@ class OutputDevices: ObservableObject {
     private var defaultChangesCancellable: AnyCancellable?
     private var timerCancellable: AnyCancellable?
     private var outputSelectionCancellable: AnyCancellable?
+    private var pollCancellable: AnyCancellable?
     
     private var processQueue = DispatchQueue(label: "processQueue", qos: .userInitiated)
     
     private var previousSampleRate: Float64?
     private var previousBitDepth: Int?
     private var lastTrackChangeDate: Date?
+    // Boundary-gate tuning: post-track-change blackout window and how long
+    // a differing candidate must persist before it may be applied.
+    private static let boundaryWindow: TimeInterval = 3.5
+    private static let stabilityConfirmation: TimeInterval = 2.0
+    // Overriding an already-applied rate for the current track requires
+    // overwhelming evidence: transient misreports (e.g. Atmos handshakes)
+    // never survive this long, while genuine corrections do.
+    private static let lockedOverridePersistence: TimeInterval = 12.0
+    // Stability confirmation for post-window rate changes (see applyStats).
+    private var pendingCandidateRate: Float64?
+    private var pendingCandidateFirstSeen: Date?
     var trackAndSample = [MediaTrack : Float64]()
     var trackAndBitDepth = [MediaTrack : Int]()
     var previousTrack: MediaTrack?
@@ -66,15 +80,21 @@ class OutputDevices: ObservableObject {
         enableBitDepthDetectionCancellable = Defaults.shared.$userPreferBitDepthDetection.sink(receiveValue: { newValue in
             self.enableBitDepthDetection = newValue
         })
-
         
+        showBitDepthCancellable = Defaults.shared.$userPreferBitDepthDisplay.sink(receiveValue: { newValue in
+            self.showBitDepthInLabel = newValue
+        })
+
+        startPolling()
     }
     
     deinit {
         changesCancellable?.cancel()
         defaultChangesCancellable?.cancel()
         timerCancellable?.cancel()
+        pollCancellable?.cancel()
         enableBitDepthDetectionCancellable?.cancel()
+        showBitDepthCancellable?.cancel()
         //timer.upstream.connect().cancel()
     }
     
@@ -92,9 +112,29 @@ class OutputDevices: ObservableObject {
                     self.timerCancellable = nil
                 }
                 else {
+                    // Snapshot the track at tick time so the stale-task guard
+                    // in switchLatestSampleRate can discard ticks that belong
+                    // to a track that has since changed.
+                    let trackSnapshot = self.currentTrack
                     self.processQueue.async {
-                        self.switchLatestSampleRate()
+                        self.switchLatestSampleRate(for: trackSnapshot)
                     }
+                }
+            }
+    }
+    
+    /// Always-on safety net alongside the event-driven path and the
+    /// renewTimer retries: catches evaluations missed when no MediaRemote
+    /// event fires (e.g. playback already running before launch). In steady
+    /// state each tick hits the same-track lock in applyStats and skips cheaply.
+    private func startPolling() {
+        pollCancellable = Timer.publish(every: 3, on: .main, in: .default)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let snapshot = self.currentTrack
+                self.processQueue.async {
+                    self.switchLatestSampleRate(for: snapshot)
                 }
             }
     }
@@ -173,7 +213,15 @@ class OutputDevices: ObservableObject {
               let sampleRate = state.sampleRate, sampleRate > 0 else {
             return nil
         }
-        return CMPlayerStats(sampleRate: sampleRate, bitDepth: 24, date: Date(), priority: 1)
+        return CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date(), priority: 1)
+    }
+
+    /// Fixed content-depth mapping (user-verified against real catalogs):
+    /// AM: 44.1k→16bit, ≥48k→24bit; NetEase: 48k→16bit special-case, rest as AM.
+    private func fixedBitDepth(sampleRate: Double, bundleID: String?) -> Int {
+        let isNetEase = bundleID?.caseInsensitiveCompare(Defaults.neteaseMusicBundleIdentifier) == .orderedSame
+        if isNetEase && abs(sampleRate - 48_000) < 1 { return 16 }
+        return sampleRate >= 47_999 ? 24 : 16
     }
 
     /// Fetches Apple Music's current track genre (nil when not playing or
@@ -371,7 +419,7 @@ class OutputDevices: ObservableObject {
         }
 
         if allStats.isEmpty, isAppleMusicSource, let sampleRate = getSampleRateFromAppleScript() {
-            let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: 24, date: Date(), priority: 1)
+            let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date(), priority: 1)
             allStats.append(stat)
             Logger.switching.info("[getAllStats] AppleScript fallback: \(stat)")
         }
@@ -416,7 +464,7 @@ class OutputDevices: ObservableObject {
                     return
                 }
                 if let sampleRate, sampleRate > 0 {
-                    let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: bitDepth ?? 24, date: Date(), priority: 10)
+                    let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: self.previousBitDepth ?? 24, date: Date(), priority: 10)
                     Logger.switching.info("[MRProbe] direct audio format: \(sampleRate) Hz, \(bitDepth ?? -1) bit")
                     self.applyStats([stat], expectedTrack: expectedTrack, recursion: recursion)
                 } else {
@@ -486,7 +534,7 @@ class OutputDevices: ObservableObject {
             // logs are not in the window yet. Fall back to AppleScript on the
             // initial attempt so switching is not lost.
             if allStats.isEmpty, !recursion, isMusicProcess, let sampleRate = getSampleRateFromAppleScript() {
-                allStats = [CMPlayerStats(sampleRate: sampleRate, bitDepth: 24, date: Date(), priority: 1)]
+                allStats = [CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date(), priority: 1)]
                 Logger.switching.info("[switchLatestSampleRate] AppleScript fallback after filtering: \(sampleRate)")
             }
         }
@@ -503,28 +551,66 @@ class OutputDevices: ObservableObject {
         if let first = allStats.first, let supported = defaultDevice?.nominalSampleRates {
             didFindStat = true
             let sampleRate = Float64(first.sampleRate)
-            let bitDepth = Int32(first.bitDepth)
+            let sourceBundleID = Self.resolveBundleIdentifier(track: currentTrack)
+            // Target depth intentionally ignores stat-reported depth (probe/log depth proved unreliable).
+            let bitDepth = Int32(fixedBitDepth(
+                sampleRate: Float64(first.sampleRate),
+                bundleID: sourceBundleID))
+            Logger.switching.info("[DepthMap] \(first.sampleRate, privacy: .public) Hz on \(sourceBundleID ?? "nil", privacy: .public) -> \(Int(bitDepth), privacy: .public)bit")
 
-            // Same-track lock: once a sample rate has been applied for the current
-            // track, never switch again within the same song unless the output
-            // device itself changed (e.g. the user switched device), the parsed
-            // sample rate actually differs from the applied one (e.g. the stream
-            // switched to another version mid-song), or, in bit depth mode, the
-            // parsed bit depth actually changed within the track. Multiple decoder
-            // log entries (e.g. Dolby Atmos streams) can jitter between sample
-            // rates, which would otherwise cause repeated switching.
-            if let currentTrack = currentTrack,
-               let cachedSampleRate = trackAndSample[currentTrack],
-               defaultDevice?.nominalSampleRate == cachedSampleRate,
-               cachedSampleRate == sampleRate {
-                let bitDepthChanged = enableBitDepthDetection
-                    && trackAndBitDepth[currentTrack] != Int(bitDepth)
-                if !bitDepthChanged {
-                    Logger.switching.info("same track, sample rate already applied, skip")
+            // Boundary gating: right after a track change, players
+            // transitioning between formats (e.g. Dolby Atmos) report an
+            // intermediate rate (44.1 kHz) for several seconds before
+            // settling on the real one — via decoder logs AND via the
+            // MediaRemote probe itself. A differing rate may only be
+            // applied when (a) the post-track-change window has closed
+            // AND (b) the same candidate has persisted across evaluations.
+            // Persistence is tiered: a first-time candidate needs only
+            // 2.0 s, but once the track already has an applied/cached
+            // rate, overriding it requires 12 s — late Atmos handshakes
+            // can outlive the short threshold yet must not cause a flap.
+            // Equal-rate candidates pass through untouched.
+            let sinceTrackChange = lastTrackChangeDate.map {
+                Date().timeIntervalSince($0)
+            } ?? .infinity
+            let rateDiffersFromDevice = defaultDevice?.nominalSampleRate != sampleRate
+            if rateDiffersFromDevice {
+                if sinceTrackChange < Self.boundaryWindow {
+                    Logger.switching.info("[Gate] candidate \(sampleRate, privacy: .public) != device \(defaultDevice?.nominalSampleRate ?? -1, privacy: .public) Hz inside boundary window, re-evaluating in 0.8s")
+                    processQueue.asyncAfter(deadline: .now() + 0.8) {
+                        self.switchLatestSampleRate(for: expectedTrack, recursion: true)
+                    }
                     return
                 }
-                Logger.switching.info("same track, bit depth changed, re-applying format")
+                // Tiered persistence: first evaluation for this track uses the
+                // short confirmation; once a rate is already applied+cached for
+                // the current track, overturning it requires the candidate to
+                // persist far longer (transient handshakes never do).
+                let requiredPersistence = currentTrack.flatMap { trackAndSample[$0] } != nil
+                    ? Self.lockedOverridePersistence
+                    : Self.stabilityConfirmation
+                let confirmed: Bool
+                if pendingCandidateRate == sampleRate,
+                   let seen = pendingCandidateFirstSeen {
+                    confirmed = Date().timeIntervalSince(seen) >= requiredPersistence
+                } else {
+                    confirmed = false
+                }
+                if !confirmed {
+                    if pendingCandidateRate != sampleRate {
+                        pendingCandidateRate = sampleRate
+                        pendingCandidateFirstSeen = Date()
+                    }
+                    Logger.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz awaiting stability \(Int(requiredPersistence))s, re-evaluating in 0.8s")
+                    processQueue.asyncAfter(deadline: .now() + 0.8) {
+                        self.switchLatestSampleRate(for: expectedTrack, recursion: true)
+                    }
+                    return
+                }
+                Logger.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz confirmed stable, applying")
             }
+            pendingCandidateRate = nil
+            pendingCandidateFirstSeen = nil
 
             guard let defaultDevice = defaultDevice,
                   let formats = self.getFormats(device: defaultDevice) else { return }
@@ -534,8 +620,12 @@ class OutputDevices: ObservableObject {
                 abs($0 - sampleRate) < abs($1 - sampleRate)
             })
 
+            // Tie-break equal distances toward the LOWER depth (closer to typical content).
             let nearestBitDepth = formats.min(by: {
-                abs(Int32($0.mBitsPerChannel) - bitDepth) < abs(Int32($1.mBitsPerChannel) - bitDepth)
+                let d0 = abs(Int32($0.mBitsPerChannel) - bitDepth)
+                let d1 = abs(Int32($1.mBitsPerChannel) - bitDepth)
+                if d0 != d1 { return d0 < d1 }
+                return $0.mBitsPerChannel < $1.mBitsPerChannel
             })
 
             if Defaults.shared.userPreferSampleRateMultiples,
@@ -548,19 +638,34 @@ class OutputDevices: ObservableObject {
                 $0.mSampleRate == nearest && $0.mBitsPerChannel == nearestBitDepth?.mBitsPerChannel
             })
 
-            Logger.switching.info("NEAREST FORMAT \(nearestFormat)")
+            Logger.switching.info("NEAREST FORMAT \(nearestFormat.map { "\($0.mSampleRate)Hz/\($0.mBitsPerChannel)bit" }.joined(separator: ", "), privacy: .public)")
 
             if let suitableFormat = nearestFormat.first {
+                // Same-track lock: once a sample rate has been applied for the current
+                // track, never switch again within the same song unless the output
+                // device itself changed (e.g. the user switched device), the parsed
+                // sample rate actually differs from the applied one (e.g. the stream
+                // switched to another version mid-song), or, in bit depth mode, the
+                // applicable bit depth actually changed within the track. Multiple decoder
+                // log entries (e.g. Dolby Atmos streams) can jitter between sample
+                // rates, which would otherwise cause repeated switching.
+                if let currentTrack = currentTrack,
+                   let cachedSampleRate = trackAndSample[currentTrack],
+                   defaultDevice.nominalSampleRate == cachedSampleRate,
+                   cachedSampleRate == sampleRate {
+                    let bitDepthChanged = trackAndBitDepth[currentTrack] != Int(suitableFormat.mBitsPerChannel)
+                    if !bitDepthChanged {
+                        Logger.switching.info("same track, sample rate already applied, skip")
+                        return
+                    }
+                    Logger.switching.info("same track, bit depth changed, re-applying format")
+                }
                 let sampleRateChanged = suitableFormat.mSampleRate != previousSampleRate
-                let bitDepthChanged = enableBitDepthDetection && Int(suitableFormat.mBitsPerChannel) != previousBitDepth
+                let bitDepthChanged = Int(suitableFormat.mBitsPerChannel) != previousBitDepth
                 let formatChanged = sampleRateChanged || bitDepthChanged
 
-                if enableBitDepthDetection {
-                    self.setFormats(device: defaultDevice, format: suitableFormat)
-                }
-                else if sampleRateChanged { // bit depth disabled
-                    defaultDevice.setNominalSampleRate(suitableFormat.mSampleRate)
-                }
+                Logger.switching.info("APPLYING rate \(suitableFormat.mSampleRate, privacy: .public) Hz depth \(suitableFormat.mBitsPerChannel, privacy: .public)")
+                self.setFormats(device: defaultDevice, format: suitableFormat)
                 self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel), runUserScript: formatChanged)
                 if let currentTrack = currentTrack {
                     self.trackAndSample[currentTrack] = suitableFormat.mSampleRate
@@ -596,6 +701,8 @@ class OutputDevices: ObservableObject {
     
     func updateSampleRate(_ sampleRate: Float64, bitDepth: Int?, runUserScript: Bool = true) {
         self.previousSampleRate = sampleRate
+        self.pendingCandidateRate = nil
+        self.pendingCandidateFirstSeen = nil
         self.previousBitDepth = bitDepth
         DispatchQueue.main.async { [self] in
             let readableSampleRate = sampleRate / 1000
@@ -610,12 +717,8 @@ class OutputDevices: ObservableObject {
     /// Shared formatted text for the menu bar label and the menu content view.
     var formattedSampleRate: String? {
         guard let currentSampleRate = currentSampleRate else { return nil }
-        if enableBitDepthDetection {
-            if let bitDepth = currentBitDepth {
-                return String(format: "%.1f kHz / %d bit", currentSampleRate, bitDepth)
-            } else {
-                return String(format: "%.1f kHz / ? bit", currentSampleRate)
-            }
+        if let bitDepth = currentBitDepth, showBitDepthInLabel {
+            return String(format: "%.1f kHz / %d bit", currentSampleRate, bitDepth)
         } else {
             return String(format: "%.1f kHz", currentSampleRate)
         }
@@ -679,6 +782,8 @@ class OutputDevices: ObservableObject {
             // time minus a small tolerance, so the new track's logs pass the filter
             // while stale logs from the previous track are discarded.
             self.lastTrackChangeDate = (eventDate ?? Date()).addingTimeInterval(-0.5)
+            self.pendingCandidateRate = nil
+            self.pendingCandidateFirstSeen = nil
             self.renewTimer()
             // Track change: apply Apple Music's EQ preset for the new genre
             // (Apple Music only; no-op unless the auto-EQ switch is on).

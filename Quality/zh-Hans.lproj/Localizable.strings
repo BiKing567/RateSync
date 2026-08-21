@@ -4,7 +4,7 @@
 
 /* Menu toggles */
 "Bit Depth Switching" = "位深度切换";
-"Prefer Closest Sample Rate Multiple" = "偏好最接近的采样率倍数";
+"Prefer Closest Sample Rate Multiple" = "设备不支持时自适应采样倍率";
 "Auto EQ by Genre (Apple Music)" = "按流派自动切换均衡器（仅 Apple Music）";
 "Experimental Features" = "试验性功能";
 

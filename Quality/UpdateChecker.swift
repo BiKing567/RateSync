@@ -12,7 +12,7 @@ import AppKit
 class UpdateChecker {
     static let shared = UpdateChecker()
     
-    private let latestReleaseURL = URL(string: "https://api.github.com/repos/BiKing567/RateSync/releases/latest")!
+    private let latestReleaseURL = URL(string: "https://api.github.com/repos/BiKing567/RateSync/releases?per_page=1")!
     
     /// Check for updates.
     /// - Parameter showUpToDate: whether to show a "you are up to date" alert when
@@ -31,9 +31,10 @@ class UpdateChecker {
                 return
             }
             
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tagName = json["tag_name"] as? String,
-                  let htmlURL = json["html_url"] as? String else {
+            guard let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let latest = array.first,
+                  let tagName = latest["tag_name"] as? String,
+                  let htmlURL = latest["html_url"] as? String else {
                 if showUpToDate {
                     self.showAlert(title: "检查更新失败", message: "无法获取更新信息，请稍后重试。")
                 }

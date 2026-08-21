@@ -12,18 +12,20 @@ class Defaults: ObservableObject {
     static let appleMusicBundleIdentifier = "com.apple.Music"
     static let spotifyBundleIdentifier = "com.spotify.client"
     static let neteaseMusicBundleIdentifier = "com.netease.163music"
-    private let kUserPreferIconStatusBarItem = "com.vincent-neo.RateSync-Key-UserPreferIconStatusBarItem"
-    private let kSelectedDeviceUID = "com.vincent-neo.RateSync-Key-SelectedDeviceUID"
-    private let kUserPreferBitDepthDetection = "com.vincent-neo.RateSync-Key-BitDepthDetection"
+    private let kUserPreferIconStatusBarItem = "com.biking.RateSync-Key-UserPreferIconStatusBarItem"
+    private let kSelectedDeviceUID = "com.biking.RateSync-Key-SelectedDeviceUID"
+    private let kUserPreferBitDepthDetection = "com.biking.RateSync-Key-BitDepthDetection"
+    private let kUserPreferBitDepthDisplay = "com.biking.RateSync-Key-BitDepthDisplay"
     private let kShellScriptPath = "KeyShellScriptPath"
     private let kUserPreferSampleRateMultiples = "PreferSampleRateMultiples"
-    private let kMonitoredBundleIdentifier = "com.vincent-neo.RateSync-Key-MonitoredBundleIdentifier"
-    private let kAutoEQEnabled = "com.vincent-neo.RateSync-Key-AutoEQEnabled"
+    private let kMonitoredBundleIdentifier = "com.biking.RateSync-Key-MonitoredBundleIdentifier"
+    private let kAutoEQEnabled = "com.biking.RateSync-Key-AutoEQEnabled"
     
     private init() {
         UserDefaults.standard.register(defaults: [
             kUserPreferIconStatusBarItem : true,
             kUserPreferBitDepthDetection : false,
+            kUserPreferBitDepthDisplay : true,
             kUserPreferSampleRateMultiples : false,
             kMonitoredBundleIdentifier : Defaults.appleMusicBundleIdentifier,
             kAutoEQEnabled : false
@@ -32,6 +34,7 @@ class Defaults: ObservableObject {
         self.shellScriptPath = UserDefaults.standard.string(forKey: kShellScriptPath)
         self.userPreferIconStatusBarItem = UserDefaults.standard.bool(forKey: kUserPreferIconStatusBarItem)
         self.userPreferBitDepthDetection = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDetection)
+        self.userPreferBitDepthDisplay = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDisplay)
         self.userPreferSampleRateMultiples = UserDefaults.standard.bool(forKey: kUserPreferSampleRateMultiples)
         self.monitoredBundleIdentifier = UserDefaults.standard.string(forKey: kMonitoredBundleIdentifier)
         self.autoEQEnabled = UserDefaults.standard.bool(forKey: kAutoEQEnabled)
@@ -67,6 +70,12 @@ class Defaults: ObservableObject {
     @Published var userPreferBitDepthDetection: Bool {
         willSet {
             UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDetection)
+        }
+    }
+
+    @Published var userPreferBitDepthDisplay: Bool {
+        willSet {
+            UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDisplay)
         }
     }
 

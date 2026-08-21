@@ -3,13 +3,13 @@
 # create-dmg 8.1.0（node 版，内部用 appdmg，自带 660x422 浅灰底+深灰箭头背景）
 # 自动 patch macos-alias：修复 APFS 挂载卷 getVolumeName() 返回空串、
 # 导致 .DS_Store 中 backgroundImageAlias 卷名为空、Finder 背景不显示的问题。
-# 用法：./make-dmg-losslessswitcher.sh [输出.dmg 路径]（默认工程目录 RateSync-2.0-汉化版.dmg）
+# 用法：./make-dmg-losslessswitcher.sh [输出.dmg 路径]（默认工程目录 RateSync-3.0.dmg）
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="RateSync"
-VERSION="3.0"
-OUT="${1:-$PROJ_DIR/RateSync-$VERSION-汉化版.dmg}"
+VERSION="3.0.1"
+OUT="${1:-$PROJ_DIR/RateSync-$VERSION.dmg}"
 
 BUILD_STAGING="$(mktemp -d /tmp/lossless-dragdrop-build-XXXXXX)"
 trap 'rm -rf "$BUILD_STAGING"' EXIT
