@@ -6,6 +6,7 @@
 //
 
 import Observation
+import Sparkle
 import SwiftUI
 
 @Observable
@@ -17,6 +18,11 @@ class MenuBarController {
     
     @ObservationIgnored
     private var mrController: MediaRemoteController!
+    
+    // Lazy so the updater is only started once the app is fully up
+    // (SPUStandardUpdaterController starts SPUUpdater on init).
+    @ObservationIgnored
+    lazy var updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     
     init() {
         let outputDevices = OutputDevices()
@@ -30,12 +36,6 @@ class MenuBarController {
         // without waiting for the next track change.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             outputDevices.reevaluateNowPlaying()
-        }
-        
-        // Automatically check for updates shortly after launch.
-        // Only prompts when a newer release is available.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            UpdateChecker.shared.checkForUpdates()
         }
     }
 }

@@ -1,5 +1,5 @@
 {
-  "originHash" : "d458c1dcb121b3ef4bd43504d2aee7a33e234586730a4257be2211c2303ce653",
+  "originHash" : "6893fc24f7f16f24994690027135994095711ebcd114f01152db16e6961f71dd",
   "pins" : [
     {
       "identity" : "mediaremote-adapter",
@@ -15,6 +15,15 @@
       "location" : "https://github.com/rnine/SimplyCoreAudio.git",
       "state" : {
         "revision" : "b5430564b1d55adab3c331fb7574445a84bd4ceb"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle.git",
+      "state" : {
+        "revision" : "ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a",
+        "version" : "2.9.6"
       }
     },
     {

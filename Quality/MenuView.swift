@@ -140,7 +140,8 @@ struct MenuView: View {
                 Text("Version - \(currentVersion)")
                 Text("Build - \(currentBuild)")
                 Button("检查更新...") {
-                    UpdateChecker.shared.checkForUpdates(showUpToDate: true)
+                    // User-initiated check; button actions run on the main thread.
+                    MenuBarController.shared.updaterController.updater.checkForUpdates()
                 }
             } label: {
                 Text("About")

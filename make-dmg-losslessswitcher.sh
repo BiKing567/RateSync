@@ -9,6 +9,7 @@ set -euo pipefail
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="RateSync"
 VERSION="3.0.1"
+BUILD="2"
 OUT="${1:-$PROJ_DIR/RateSync-$VERSION.dmg}"
 
 BUILD_STAGING="$(mktemp -d /tmp/lossless-dragdrop-build-XXXXXX)"
@@ -106,3 +107,23 @@ fi
 echo "==> 完成：$OUT"
 echo "    （分发到其他 Mac：首次打开需右键 → 打开，或先执行"
 echo "      xattr -dr com.apple.quarantine \"/Applications/$APP_NAME.app\"）"
+
+# ── Sparkle 签名（应用内更新）────────────────────────────
+SIGN_UPDATE="${SPARKLE_SIGN_UPDATE:-/tmp/sparkle-tools/Build/Products/Release/sign_update}"
+if [ -x "$SIGN_UPDATE" ]; then
+    SIG_OUT="$("$SIGN_UPDATE" "$OUT")"
+    SIG="$(printf '%s' "$SIG_OUT" | sed -E 's/^sparkle:edSignature="([^"]+)".*/\1/')"
+    LEN="$(printf '%s' "$SIG_OUT" | sed -E 's/.*length="([0-9]+)".*/\1/')"
+    echo ""
+    echo "==> Sparkle 签名完成，请将以下 <item> 追加到仓库根目录 appcast.xml："
+    cat <<EOF
+        <item>
+            <title>Version $VERSION (构建 $BUILD)</title>
+            <pubDate>$(date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v$VERSION/$(basename "$OUT")" sparkle:edSignature="$SIG" length="$LEN" type="application/octet-stream"/>
+        </item>
+EOF
+else
+    echo "==> 未找到 sign_update（可设 SPARKLE_SIGN_UPDATE 指向该工具），跳过 Sparkle 签名输出"
+fi

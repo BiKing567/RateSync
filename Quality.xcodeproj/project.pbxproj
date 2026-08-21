@@ -33,6 +33,7 @@
 		BF5A87BA2E01D746002033D6 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A87B92E01D746002033D6 /* MenuBarController.swift */; };
 		BF7E0D09296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */; };
 		BF9900022E0999990032F001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BF9900032E0999990032F001 /* Localizable.strings */; };
+		BF1A2B3C2E10000300320001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = BF1A2B3C2E10000200320001 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -85,6 +86,7 @@
 				1221F3F9280F10A3003E8B77 /* SimplyCoreAudio in Frameworks */,
 				1272AAB1280DC71B00FD72BA /* Sweep in Frameworks */,
 				BF342D7C2E0935980032F398 /* MediaRemoteAdapter in Frameworks */,
+				BF1A2B3C2E10000300320001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -175,6 +177,7 @@
 				1272AAB0280DC71B00FD72BA /* Sweep */,
 				1221F3F8280F10A3003E8B77 /* SimplyCoreAudio */,
 				BF342D7B2E0935980032F398 /* MediaRemoteAdapter */,
+				BF1A2B3C2E10000200320001 /* Sparkle */,
 			);
 			productName = Quality;
 			productReference = 1272AA94280DBB4900FD72BA /* RateSync.app */;
@@ -209,6 +212,7 @@
 				1272AAAF280DC71B00FD72BA /* XCRemoteSwiftPackageReference "Sweep" */,
 				1221F3F7280F10A3003E8B77 /* XCRemoteSwiftPackageReference "SimplyCoreAudio" */,
 				BF342D7A2E0935980032F398 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */,
+				BF1A2B3C2E10000100320001 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			productRefGroup = 1272AA95280DBB4900FD72BA /* Products */;
 			projectDirPath = "";
@@ -504,6 +508,14 @@
 				revision = 5b6afde3f501a3da567e23bf7f23d562938a1809;
 			};
 		};
+		BF1A2B3C2E10000100320001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -521,6 +533,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BF342D7A2E0935980032F398 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */;
 			productName = MediaRemoteAdapter;
+		};
+		BF1A2B3C2E10000200320001 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BF1A2B3C2E10000100320001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
