@@ -6,10 +6,10 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
-            <title>Version 3.0.1 (构建 2)</title>
-            <pubDate>Fri, 21 Aug 2026 16:02:00 +0000</pubDate>
+            <title>Version 3.0.1 (构建 3)</title>
+            <pubDate>Fri, 21 Aug 2026 16:41:30 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.0.1/RateSync-3.0.1.dmg" sparkle:edSignature="rmAP9BuO1HKX0PCQZe2zBP6AkDme0Vc3h1debIB0k4/r2qLr1uzVNw90Vp6kNPrEbNsu+oPLrGcip0E4v13oCA==" length="1971465" type="application/octet-stream"/>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.0.1/RateSync-3.0.1.dmg" sparkle:edSignature="pHjC241JreKqJ2WLSaiuXc5gHbTZoPkmhX4UWRCCB0/Lj83W9U6CJW8AfNsMHaRxVU2aHNPM6IPozgGdRsLMCg==" length="2831873" type="application/octet-stream"/>
         </item>
     </channel>
 </rss>
