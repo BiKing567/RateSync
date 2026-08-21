@@ -116,12 +116,14 @@ if [ -x "$SIGN_UPDATE" ]; then
     LEN="$(printf '%s' "$SIG_OUT" | sed -E 's/.*length="([0-9]+)".*/\1/')"
     echo ""
     echo "==> Sparkle 签名完成，请将以下 <item> 追加到仓库根目录 appcast.xml："
+    SPARKLE_VERSION="$BUILD"
+    SPARKLE_SHORTVERSION="$VERSION"
     cat <<EOF
         <item>
             <title>Version $VERSION (构建 $BUILD)</title>
             <pubDate>$(date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v$VERSION/$(basename "$OUT")" sparkle:edSignature="$SIG" length="$LEN" type="application/octet-stream"/>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v$VERSION/$(basename "$OUT")" sparkle:version="$SPARKLE_VERSION" sparkle:shortVersionString="$SPARKLE_SHORTVERSION" sparkle:edSignature="$SIG" length="$LEN" type="application/octet-stream"/>
         </item>
 EOF
 else
