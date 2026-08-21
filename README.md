@@ -2,7 +2,7 @@
   <img width="200" alt="RateSync Icon" src="./RateSync_Icon.png">
 </p>
 
-# RateSync 3.0 汉化版
+# RateSync
 
 > 本项目基于 [vincentneo/LosslessSwitcher](https://github.com/vincentneo/LosslessSwitcher)（GPL-3.0）汉化并修复而来，感谢原作者 Vincent Neo 开发了这款优秀的开源应用。
 
