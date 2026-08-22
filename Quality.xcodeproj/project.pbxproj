@@ -28,6 +28,7 @@
 		BF342D7C2E0935980032F398 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = BF342D7B2E0935980032F398 /* MediaRemoteAdapter */; };
 		BF342D7D2E0937D20032F398 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = BF342D7B2E0935980032F398 /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		BF342D802E0947890032F398 /* SampleRateLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D7F2E0947890032F398 /* SampleRateLabel.swift */; };
+		BF342D902E0B000100320002 /* StatusBarLabelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D902E0B000100320001 /* StatusBarLabelView.swift */; };
 		BF342D822E0948730032F398 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D812E0948730032F398 /* MenuView.swift */; };
 		BF5A88A12E0F00000032F001 /* MediaRemoteSampleRateProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */; };
 		BF5A87BA2E01D746002033D6 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A87B92E01D746002033D6 /* MenuBarController.swift */; };
@@ -71,6 +72,7 @@
 		BF0C90C72B20BFD6002F99C9 /* RateSync.sdef */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = RateSync.sdef; sourceTree = "<group>"; };
 		BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptableApplicationCommand.swift; sourceTree = "<group>"; };
 		BF342D7F2E0947890032F398 /* SampleRateLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleRateLabel.swift; sourceTree = "<group>"; };
+		BF342D902E0B000100320001 /* StatusBarLabelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarLabelView.swift; sourceTree = "<group>"; };
 		BF342D812E0948730032F398 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRemoteSampleRateProbe.swift; sourceTree = "<group>"; };
 		BF5A87B92E01D746002033D6 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
@@ -126,6 +128,7 @@
 				1272AA97280DBB4900FD72BA /* QualityApp.swift */,
 				BF342D812E0948730032F398 /* MenuView.swift */,
 				BF342D7F2E0947890032F398 /* SampleRateLabel.swift */,
+				BF342D902E0B000100320001 /* StatusBarLabelView.swift */,
 				BF5A87B92E01D746002033D6 /* MenuBarController.swift */,
 				1272AA99280DBB4900FD72BA /* ContentView.swift */,
 				1272AA9B280DBB4B00FD72BA /* Assets.xcassets */,
@@ -259,6 +262,7 @@
 				1293436B28131591002E19A8 /* CurrentUser.swift in Sources */,
 				1272AA98280DBB4900FD72BA /* QualityApp.swift in Sources */,
 				BF342D802E0947890032F398 /* SampleRateLabel.swift in Sources */,
+				BF342D902E0B000100320002 /* StatusBarLabelView.swift in Sources */,
 				127C972D281FCF000087313B /* AppVersion.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
