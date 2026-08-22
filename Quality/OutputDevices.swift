@@ -643,6 +643,17 @@ class OutputDevices: ObservableObject {
                 let bitDepthChanged = enableBitDepthDetection && Int(suitableFormat.mBitsPerChannel) != previousBitDepth
                 let formatChanged = sampleRateChanged || bitDepthChanged
 
+                // An equal-rate result is a NO-OP (device already correct).
+                // Applying-and-caching it would wrongly "settle" the track:
+                // a genuine rate arriving later would then be forced onto
+                // the slow 12 s override tier (observed as ~20 s switching
+                // when the first read is stale data from the previous
+                // track). Leave such tracks uncached instead.
+                if !formatChanged {
+                    Logger.switching.info("already at target format, nothing to apply (left uncached)")
+                    return
+                }
+
                 Logger.switching.info("APPLYING rate \(suitableFormat.mSampleRate, privacy: .public) Hz depth \(suitableFormat.mBitsPerChannel, privacy: .public)")
                 if enableBitDepthDetection {
                     self.setFormats(device: defaultDevice, format: suitableFormat)
