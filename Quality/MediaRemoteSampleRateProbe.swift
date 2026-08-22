@@ -74,9 +74,9 @@ enum MediaRemoteSampleRateProbe {
             lock.unlock()
             completion(sampleRate, bitDepth)
         }
-        // Timeout guard (1.5 s): treat a silent private-API callback as
+        // Timeout guard (1.0 s): treat a silent private-API callback as
         // "no data" so the caller's fallback chain keeps running.
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.5) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.0) {
             completeOnce(nil, nil)
         }
         let queue = DispatchQueue.global(qos: .userInitiated)

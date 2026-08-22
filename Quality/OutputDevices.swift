@@ -568,8 +568,8 @@ class OutputDevices: ObservableObject {
             let rateDiffersFromDevice = defaultDevice?.nominalSampleRate != sampleRate
             if rateDiffersFromDevice {
                 if sinceTrackChange < Self.boundaryWindow {
-                    Logger.switching.info("[Gate] candidate \(sampleRate, privacy: .public) != device \(defaultDevice?.nominalSampleRate ?? -1, privacy: .public) Hz inside boundary window, re-evaluating in 0.8s")
-                    processQueue.asyncAfter(deadline: .now() + 0.8) {
+                    Logger.switching.info("[Gate] candidate \(sampleRate, privacy: .public) != device \(defaultDevice?.nominalSampleRate ?? -1, privacy: .public) Hz inside boundary window, re-evaluating in 0.5s")
+                    processQueue.asyncAfter(deadline: .now() + 0.5) {
                         self.switchLatestSampleRate(for: expectedTrack, recursion: true)
                     }
                     return
@@ -593,8 +593,8 @@ class OutputDevices: ObservableObject {
                         pendingCandidateRate = sampleRate
                         pendingCandidateFirstSeen = Date()
                     }
-                    Logger.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz awaiting stability \(Int(requiredPersistence))s, re-evaluating in 0.8s")
-                    processQueue.asyncAfter(deadline: .now() + 0.8) {
+                    Logger.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz awaiting stability \(Int(requiredPersistence))s, re-evaluating in 0.5s")
+                    processQueue.asyncAfter(deadline: .now() + 0.5) {
                         self.switchLatestSampleRate(for: expectedTrack, recursion: true)
                     }
                     return
