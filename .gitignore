@@ -55,3 +55,7 @@ xcuserdata/
 
 # Build artifacts
 *.dmg
+
+### Windows ###
+# Thumbnail cache (appears when the repo is opened on Windows)
+Thumbs.db
