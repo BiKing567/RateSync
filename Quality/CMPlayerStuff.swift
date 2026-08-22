@@ -13,12 +13,11 @@ struct CMPlayerStats {
     let sampleRate: Double // Hz
     let bitDepth: Int
     let date: Date
-    let priority: Int
 }
 
 extension CMPlayerStats: CustomStringConvertible {
     var description: String {
-        return "CMPlayerStats(sampleRate: \(sampleRate), bitDepth: \(bitDepth), priority: \(priority))"
+        return "CMPlayerStats(sampleRate: \(sampleRate), bitDepth: \(bitDepth))"
     }
 }
 
@@ -54,7 +53,7 @@ class CMPlayerParser {
             
             if let sr = sampleRate,
                let bd = bitDepth {
-                let stat = CMPlayerStats(sampleRate: sr, bitDepth: bd, date: date, priority: 5)
+                let stat = CMPlayerStats(sampleRate: sr, bitDepth: bd, date: date)
                 stats.append(stat)
                 sampleRate = nil
                 bitDepth = nil
@@ -109,7 +108,7 @@ class CMPlayerParser {
             }
 
             if let sr = sampleRate, sr > 0 {
-                let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth ?? 16, date: date, priority: 3)
+                let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth ?? 16, date: date)
                 stats.append(stat)
                 sampleRate = nil
                 bitDepth = nil

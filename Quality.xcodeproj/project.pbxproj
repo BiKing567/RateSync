@@ -22,7 +22,6 @@
 		127C972D281FCF000087313B /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 127C972C281FCF000087313B /* AppVersion.swift */; };
 		1293436B28131591002E19A8 /* CurrentUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1293436A28131591002E19A8 /* CurrentUser.swift */; };
 		12AFF5C12811AD40001CC6ED /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12AFF5C02811AD40001CC6ED /* AppDelegate.swift */; };
-		A1B2C3D40000000000000002 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000001 /* UpdateChecker.swift */; };
 		BF0C90C82B20BFD6002F99C9 /* RateSync.sdef in Resources */ = {isa = PBXBuildFile; fileRef = BF0C90C72B20BFD6002F99C9 /* RateSync.sdef */; };
 		BF0C90CA2B20C163002F99C9 /* ScriptableApplicationCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */; };
 		BF342D7C2E0935980032F398 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = BF342D7B2E0935980032F398 /* MediaRemoteAdapter */; };
@@ -68,7 +67,6 @@
 		127C972C281FCF000087313B /* AppVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVersion.swift; sourceTree = "<group>"; };
 		1293436A28131591002E19A8 /* CurrentUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentUser.swift; sourceTree = "<group>"; };
 		12AFF5C02811AD40001CC6ED /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		A1B2C3D40000000000000001 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		BF0C90C72B20BFD6002F99C9 /* RateSync.sdef */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = RateSync.sdef; sourceTree = "<group>"; };
 		BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptableApplicationCommand.swift; sourceTree = "<group>"; };
 		BF342D7F2E0947890032F398 /* SampleRateLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleRateLabel.swift; sourceTree = "<group>"; };
@@ -124,7 +122,6 @@
 			children = (
 				1254A79D2814024300241107 /* Info.plist */,
 				12AFF5C02811AD40001CC6ED /* AppDelegate.swift */,
-				A1B2C3D40000000000000001 /* UpdateChecker.swift */,
 				1272AA97280DBB4900FD72BA /* QualityApp.swift */,
 				BF342D812E0948730032F398 /* MenuView.swift */,
 				BF342D7F2E0947890032F398 /* SampleRateLabel.swift */,
@@ -246,7 +243,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				12AFF5C12811AD40001CC6ED /* AppDelegate.swift in Sources */,
-				A1B2C3D40000000000000002 /* UpdateChecker.swift in Sources */,
 				BF0C90CA2B20C163002F99C9 /* ScriptableApplicationCommand.swift in Sources */,
 				1254A79C2813FB9400241107 /* Defaults.swift in Sources */,
 				BF7E0D09296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift in Sources */,

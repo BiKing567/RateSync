@@ -14,7 +14,6 @@ class Defaults: ObservableObject {
     static let neteaseMusicBundleIdentifier = "com.netease.163music"
     private let kUserPreferIconStatusBarItem = "com.biking.RateSync-Key-UserPreferIconStatusBarItem"
     private let kSelectedDeviceUID = "com.biking.RateSync-Key-SelectedDeviceUID"
-    private let kUserPreferBitDepthDetection = "com.biking.RateSync-Key-BitDepthDetection"
     private let kUserPreferBitDepthDisplay = "com.biking.RateSync-Key-BitDepthDisplay"
     private let kShellScriptPath = "KeyShellScriptPath"
     private let kUserPreferSampleRateMultiples = "PreferSampleRateMultiples"
@@ -24,7 +23,6 @@ class Defaults: ObservableObject {
     private init() {
         UserDefaults.standard.register(defaults: [
             kUserPreferIconStatusBarItem : true,
-            kUserPreferBitDepthDetection : false,
             kUserPreferBitDepthDisplay : true,
             kUserPreferSampleRateMultiples : false,
             kMonitoredBundleIdentifier : Defaults.appleMusicBundleIdentifier,
@@ -33,7 +31,6 @@ class Defaults: ObservableObject {
         
         self.shellScriptPath = UserDefaults.standard.string(forKey: kShellScriptPath)
         self.userPreferIconStatusBarItem = UserDefaults.standard.bool(forKey: kUserPreferIconStatusBarItem)
-        self.userPreferBitDepthDetection = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDetection)
         self.userPreferBitDepthDisplay = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDisplay)
         self.userPreferSampleRateMultiples = UserDefaults.standard.bool(forKey: kUserPreferSampleRateMultiples)
         self.monitoredBundleIdentifier = UserDefaults.standard.string(forKey: kMonitoredBundleIdentifier)
@@ -67,12 +64,6 @@ class Defaults: ObservableObject {
         }
     }
     
-    @Published var userPreferBitDepthDetection: Bool {
-        willSet {
-            UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDetection)
-        }
-    }
-
     @Published var userPreferBitDepthDisplay: Bool {
         willSet {
             UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDisplay)

@@ -19,10 +19,8 @@ class OutputDevices: ObservableObject {
     @Published var outputDevices = [AudioDevice]()
     @Published var currentSampleRate: Float64?
     @Published var currentBitDepth: Int?
-    @Published var enableBitDepthDetection = Defaults.shared.userPreferBitDepthDetection
     @Published var showBitDepthInLabel = Defaults.shared.userPreferBitDepthDisplay
     
-    private var enableBitDepthDetectionCancellable: AnyCancellable?
     private var showBitDepthCancellable: AnyCancellable?
     
     private let coreAudio = SimplyCoreAudio()
@@ -54,7 +52,6 @@ class OutputDevices: ObservableObject {
     var previousTrack: MediaTrack?
     var currentTrack: MediaTrack?
     
-    var timerActive = false
     var timerCalls = 0
     
     init() {
@@ -77,10 +74,6 @@ class OutputDevices: ObservableObject {
             self.getDeviceSampleRate()
         })
         
-        enableBitDepthDetectionCancellable = Defaults.shared.$userPreferBitDepthDetection.sink(receiveValue: { newValue in
-            self.enableBitDepthDetection = newValue
-        })
-        
         showBitDepthCancellable = Defaults.shared.$userPreferBitDepthDisplay.sink(receiveValue: { newValue in
             self.showBitDepthInLabel = newValue
         })
@@ -93,7 +86,6 @@ class OutputDevices: ObservableObject {
         defaultChangesCancellable?.cancel()
         timerCancellable?.cancel()
         pollCancellable?.cancel()
-        enableBitDepthDetectionCancellable?.cancel()
         showBitDepthCancellable?.cancel()
         //timer.upstream.connect().cancel()
     }
@@ -213,7 +205,7 @@ class OutputDevices: ObservableObject {
               let sampleRate = state.sampleRate, sampleRate > 0 else {
             return nil
         }
-        return CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date(), priority: 1)
+        return CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date())
     }
 
     /// Fixed content-depth mapping (user-verified against real catalogs):
@@ -419,7 +411,7 @@ class OutputDevices: ObservableObject {
         }
 
         if allStats.isEmpty, isAppleMusicSource, let sampleRate = getSampleRateFromAppleScript() {
-            let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date(), priority: 1)
+            let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date())
             allStats.append(stat)
             Logger.switching.info("[getAllStats] AppleScript fallback: \(stat)")
         }
@@ -464,7 +456,7 @@ class OutputDevices: ObservableObject {
                     return
                 }
                 if let sampleRate, sampleRate > 0 {
-                    let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: self.previousBitDepth ?? 24, date: Date(), priority: 10)
+                    let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: self.previousBitDepth ?? 24, date: Date())
                     Logger.switching.info("[MRProbe] direct audio format: \(sampleRate) Hz, \(bitDepth ?? -1) bit")
                     self.applyStats([stat], expectedTrack: expectedTrack, recursion: recursion)
                 } else {
@@ -476,7 +468,7 @@ class OutputDevices: ObservableObject {
                        let track = self.currentTrack,
                        let bundleID = Self.resolveBundleIdentifier(track: track),
                        let preset = Self.presetSampleRate(for: bundleID) {
-                        let stat = CMPlayerStats(sampleRate: preset, bitDepth: 16, date: Date(), priority: 0)
+                        let stat = CMPlayerStats(sampleRate: preset, bitDepth: 16, date: Date())
                         Logger.switching.info("[Preset] \(bundleID) -> \(preset) Hz")
                         self.applyStats([stat], expectedTrack: expectedTrack, recursion: recursion)
                     } else {
@@ -534,7 +526,7 @@ class OutputDevices: ObservableObject {
             // logs are not in the window yet. Fall back to AppleScript on the
             // initial attempt so switching is not lost.
             if allStats.isEmpty, !recursion, isMusicProcess, let sampleRate = getSampleRateFromAppleScript() {
-                allStats = [CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date(), priority: 1)]
+                allStats = [CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date())]
                 Logger.switching.info("[switchLatestSampleRate] AppleScript fallback after filtering: \(sampleRate)")
             }
         }
