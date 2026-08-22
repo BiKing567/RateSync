@@ -5,19 +5,14 @@
 
 import SwiftUI
 
-/// Self-contained MenuBarExtra label.
-///
-/// The icon/text preference is captured ONCE at view creation (@State) — the
-/// label must never re-render from Defaults changes, because updating a
-/// MenuBarExtra label in the fragile post-install window can silently drop
-/// the NSStatusItem. Live rate text still updates through SampleRateLabel's
-/// outputDevices observation (proven stable). Changing the icon style
-/// therefore takes effect on next app launch.
+/// Self-contained MenuBarExtra label. Observes Defaults directly so the
+/// icon/text style toggle applies immediately. (Historic "vanishing" was the
+/// MacBook notch hiding longer text — not a rendering bug.)
 struct StatusBarLabelView: View {
-    @State private var showsIconOnly = Defaults.shared.userPreferIconStatusBarItem
+    @ObservedObject private var defaults = Defaults.shared
 
     var body: some View {
-        if showsIconOnly {
+        if defaults.userPreferIconStatusBarItem {
             Image(systemName: "music.note")
                 .padding(.horizontal, 8)
         } else {

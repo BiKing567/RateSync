@@ -21,7 +21,7 @@ struct MenuView: View {
             Button {
                 defaults.userPreferIconStatusBarItem.toggle()
             } label: {
-                Text(defaults.statusBarItemTitle + "（重启生效）")
+                Text(defaults.statusBarItemTitle)
             }
             
             Button {
