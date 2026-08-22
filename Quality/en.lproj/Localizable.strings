@@ -1,0 +1,51 @@
+/* Status bar item toggle */
+"Show Sample Rate" = "Show Sample Rate";
+"Show Icon" = "Show Icon";
+
+/* Menu toggles */
+"Show Bit Depth in Menu Bar" = "Show Bit Depth in Menu Bar";
+"Prefer Closest Sample Rate Multiple" = "Prefer Closest Sample Rate Multiple";
+"Auto EQ by Genre (Apple Music)" = "Auto EQ by Genre (Apple Music)";
+"Experimental Features" = "Experimental Features";
+
+/* Device selection */
+"Default Device" = "Default Device";
+"Selected Device" = "Selected Device";
+
+/* Monitoring source */
+"Monitor Source" = "Monitor Source";
+"All Apps" = "All Apps";
+"Apple Music" = "Apple Music";
+"Spotify" = "Spotify";
+"NetEase Music" = "NetEase Music";
+
+/* About menu */
+"About" = "About";
+"Version - %@" = "Version - %@";
+"Build - %@" = "Build - %@";
+"Check for Updates..." = "Check for Updates...";
+
+/* Scripting menu */
+"Scripting" = "Scripting";
+"Select Script..." = "Select Script...";
+"Clear Selection" = "Clear Selection";
+"No selection" = "No selection";
+
+/* Script selection panel */
+"Select a script that should be invoked when sample rate changes." = "Select a script that should be invoked when sample rate changes.";
+
+/* Quit */
+"Quit RateSync" = "Quit RateSync";
+
+/* Sample rate label fallback */
+"Unknown" = "Unknown";
+
+/* Alert titles */
+"Requires Privileges" = "Requires Privileges";
+
+/* Alert messages */
+"RateSync requires Administrator privileges in order to detect each song's lossless sample rate in the Music app." = "RateSync requires Administrator privileges in order to detect each song's lossless sample rate in the Music app.";
+"RateSync could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work." = "RateSync could not check if your account has Administrator privileges. If your account lacks Administrator privileges, sample rate detection will not work.";
+
+/* Initial status item text */
+"Loading..." = "Loading...";

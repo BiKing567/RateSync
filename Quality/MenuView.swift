@@ -39,7 +39,7 @@ struct MenuView: View {
                 defaults.userPreferBitDepthDisplay.toggle()
             } label: {
                 HStack {
-                    Text("菜单栏显示位深度")
+                    Text("Show Bit Depth in Menu Bar")
                     if defaults.userPreferBitDepthDisplay {
                         Image(systemName: "checkmark")
                     }
@@ -139,7 +139,7 @@ struct MenuView: View {
             Menu {
                 Text("Version - \(currentVersion)")
                 Text("Build - \(currentBuild)")
-                Button("检查更新...") {
+                Button("Check for Updates...") {
                     // User-initiated check; button actions run on the main thread.
                     MenuBarController.shared.updaterController.updater.checkForUpdates()
                 }

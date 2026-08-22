@@ -3,7 +3,8 @@
 "Show Icon" = "显示图标";
 
 /* Menu toggles */
-"Bit Depth Switching" = "位深度切换";
+/* Bit depth display */
+"Show Bit Depth in Menu Bar" = "菜单栏显示位深度";
 "Prefer Closest Sample Rate Multiple" = "设备不支持时自适应采样倍率";
 "Auto EQ by Genre (Apple Music)" = "按流派自动切换均衡器（仅 Apple Music）";
 "Experimental Features" = "试验性功能";
@@ -23,6 +24,9 @@
 "About" = "关于";
 "Version - %@" = "版本 - %@";
 "Build - %@" = "构建 - %@";
+
+/* Updates */
+"Check for Updates..." = "检查更新...";
 
 /* Scripting menu */
 "Scripting" = "脚本";
