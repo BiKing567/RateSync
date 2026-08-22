@@ -4,6 +4,13 @@
 
 # RateSync
 
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/BiKing567/RateSync?style=flat-square" alt="release">
+  <img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="license">
+  <img src="https://img.shields.io/github/downloads/BiKing567/RateSync/total?style=flat-square" alt="downloads">
+  <img src="https://img.shields.io/badge/macOS-15.4%2B-blue?style=flat-square" alt="macOS">
+</p>
+
 > 本项目基于 [vincentneo/LosslessSwitcher](https://github.com/vincentneo/LosslessSwitcher)（GPL-3.0）汉化并修改，感谢原作者 Vincent Neo 开发了这款优秀的开源应用。
 
 RateSync 会自动将当前音频输出设备的采样率和位深度切换到与当前播放的无损歌曲一致的值。
