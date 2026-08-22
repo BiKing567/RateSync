@@ -398,7 +398,7 @@
 				CODE_SIGN_ENTITLEMENTS = Quality/Quality.entitlements;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_ASSET_PATHS = "\"Quality/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -414,7 +414,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 3.0.1b;
+				MARKETING_VERSION = 3.0.1c;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.biking.RateSync";
 				PRODUCT_NAME = RateSync;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -433,7 +433,7 @@
 				CODE_SIGN_ENTITLEMENTS = Quality/Quality.entitlements;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_ASSET_PATHS = "\"Quality/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -449,7 +449,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 3.0.1b;
+				MARKETING_VERSION = 3.0.1c;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.biking.RateSync";
 				PRODUCT_NAME = RateSync;
 				SWIFT_EMIT_LOC_STRINGS = YES;
