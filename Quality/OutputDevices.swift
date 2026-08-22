@@ -718,7 +718,7 @@ class OutputDevices: ObservableObject {
     var formattedSampleRate: String? {
         guard let currentSampleRate = currentSampleRate else { return nil }
         if let bitDepth = currentBitDepth, showBitDepthInLabel {
-            return String(format: "%.1f kHz / %d bit", currentSampleRate, bitDepth)
+            return String(format: "%gk·%dbit", currentSampleRate, bitDepth)
         } else {
             return String(format: "%.1f kHz", currentSampleRate)
         }
