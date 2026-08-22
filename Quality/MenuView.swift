@@ -23,6 +23,17 @@ struct MenuView: View {
             } label: {
                 Text(defaults.statusBarItemTitle)
             }
+
+            Button {
+                defaults.userPreferBitDepthDetection.toggle()
+            } label: {
+                HStack {
+                    Text("Bit Depth Switching")
+                    if defaults.userPreferBitDepthDetection {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
             
             Button {
                 defaults.userPreferSampleRateMultiples.toggle()
@@ -34,18 +45,7 @@ struct MenuView: View {
                     }
                 }
             }
-            
-            Button {
-                defaults.userPreferBitDepthDisplay.toggle()
-            } label: {
-                HStack {
-                    Text("Show Bit Depth in Menu Bar")
-                    if defaults.userPreferBitDepthDisplay {
-                        Image(systemName: "checkmark")
-                    }
-                }
-            }
-            
+
             Menu {
                 Button {
                     defaults.autoEQEnabled.toggle()

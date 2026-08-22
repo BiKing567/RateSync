@@ -19,9 +19,9 @@ class OutputDevices: ObservableObject {
     @Published var outputDevices = [AudioDevice]()
     @Published var currentSampleRate: Float64?
     @Published var currentBitDepth: Int?
-    @Published var showBitDepthInLabel = Defaults.shared.userPreferBitDepthDisplay
+    @Published var enableBitDepthDetection = Defaults.shared.userPreferBitDepthDetection
     
-    private var showBitDepthCancellable: AnyCancellable?
+    private var enableBitDepthDetectionCancellable: AnyCancellable?
     
     private let coreAudio = SimplyCoreAudio()
     
@@ -74,8 +74,8 @@ class OutputDevices: ObservableObject {
             self.getDeviceSampleRate()
         })
         
-        showBitDepthCancellable = Defaults.shared.$userPreferBitDepthDisplay.sink(receiveValue: { newValue in
-            self.showBitDepthInLabel = newValue
+        enableBitDepthDetectionCancellable = Defaults.shared.$userPreferBitDepthDetection.sink(receiveValue: { newValue in
+            self.enableBitDepthDetection = newValue
         })
 
         startPolling()
@@ -86,7 +86,7 @@ class OutputDevices: ObservableObject {
         defaultChangesCancellable?.cancel()
         timerCancellable?.cancel()
         pollCancellable?.cancel()
-        showBitDepthCancellable?.cancel()
+        enableBitDepthDetectionCancellable?.cancel()
         //timer.upstream.connect().cancel()
     }
     
@@ -206,14 +206,6 @@ class OutputDevices: ObservableObject {
             return nil
         }
         return CMPlayerStats(sampleRate: sampleRate, bitDepth: previousBitDepth ?? 24, date: Date())
-    }
-
-    /// Fixed content-depth mapping (user-verified against real catalogs):
-    /// AM: 44.1k→16bit, ≥48k→24bit; NetEase: 48k→16bit special-case, rest as AM.
-    private func fixedBitDepth(sampleRate: Double, bundleID: String?) -> Int {
-        let isNetEase = bundleID?.caseInsensitiveCompare(Defaults.neteaseMusicBundleIdentifier) == .orderedSame
-        if isNetEase && abs(sampleRate - 48_000) < 1 { return 16 }
-        return sampleRate >= 47_999 ? 24 : 16
     }
 
     /// Fetches Apple Music's current track genre (nil when not playing or
@@ -543,12 +535,7 @@ class OutputDevices: ObservableObject {
         if let first = allStats.first, let supported = defaultDevice?.nominalSampleRates {
             didFindStat = true
             let sampleRate = Float64(first.sampleRate)
-            let sourceBundleID = Self.resolveBundleIdentifier(track: currentTrack)
-            // Target depth intentionally ignores stat-reported depth (probe/log depth proved unreliable).
-            let bitDepth = Int32(fixedBitDepth(
-                sampleRate: Float64(first.sampleRate),
-                bundleID: sourceBundleID))
-            Logger.switching.info("[DepthMap] \(first.sampleRate, privacy: .public) Hz on \(sourceBundleID ?? "nil", privacy: .public) -> \(Int(bitDepth), privacy: .public)bit")
+            let bitDepth = Int32(first.bitDepth)
 
             // Boundary gating: right after a track change, players
             // transitioning between formats (e.g. Dolby Atmos) report an
@@ -645,7 +632,7 @@ class OutputDevices: ObservableObject {
                    let cachedSampleRate = trackAndSample[currentTrack],
                    defaultDevice.nominalSampleRate == cachedSampleRate,
                    cachedSampleRate == sampleRate {
-                    let bitDepthChanged = trackAndBitDepth[currentTrack] != Int(suitableFormat.mBitsPerChannel)
+                    let bitDepthChanged = enableBitDepthDetection && trackAndBitDepth[currentTrack] != Int(suitableFormat.mBitsPerChannel)
                     if !bitDepthChanged {
                         Logger.switching.info("same track, sample rate already applied, skip")
                         return
@@ -653,11 +640,16 @@ class OutputDevices: ObservableObject {
                     Logger.switching.info("same track, bit depth changed, re-applying format")
                 }
                 let sampleRateChanged = suitableFormat.mSampleRate != previousSampleRate
-                let bitDepthChanged = Int(suitableFormat.mBitsPerChannel) != previousBitDepth
+                let bitDepthChanged = enableBitDepthDetection && Int(suitableFormat.mBitsPerChannel) != previousBitDepth
                 let formatChanged = sampleRateChanged || bitDepthChanged
 
                 Logger.switching.info("APPLYING rate \(suitableFormat.mSampleRate, privacy: .public) Hz depth \(suitableFormat.mBitsPerChannel, privacy: .public)")
-                self.setFormats(device: defaultDevice, format: suitableFormat)
+                if enableBitDepthDetection {
+                    self.setFormats(device: defaultDevice, format: suitableFormat)
+                }
+                else if sampleRateChanged { // bit depth disabled
+                    defaultDevice.setNominalSampleRate(suitableFormat.mSampleRate)
+                }
                 self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel), runUserScript: formatChanged)
                 if let currentTrack = currentTrack {
                     self.trackAndSample[currentTrack] = suitableFormat.mSampleRate
@@ -709,8 +701,8 @@ class OutputDevices: ObservableObject {
     /// Shared formatted text for the menu bar label and the menu content view.
     var formattedSampleRate: String? {
         guard let currentSampleRate = currentSampleRate else { return nil }
-        if let bitDepth = currentBitDepth, showBitDepthInLabel {
-            return String(format: "%gk·%dbit", currentSampleRate, bitDepth)
+        if let bitDepth = currentBitDepth, enableBitDepthDetection {
+            return String(format: "%.1f kHz / %d bit", currentSampleRate, bitDepth)
         } else {
             return String(format: "%.1f kHz", currentSampleRate)
         }

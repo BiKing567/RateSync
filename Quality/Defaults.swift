@@ -15,6 +15,7 @@ class Defaults: ObservableObject {
     private let kUserPreferIconStatusBarItem = "com.biking.RateSync-Key-UserPreferIconStatusBarItem"
     private let kSelectedDeviceUID = "com.biking.RateSync-Key-SelectedDeviceUID"
     private let kUserPreferBitDepthDisplay = "com.biking.RateSync-Key-BitDepthDisplay"
+    private let kUserPreferBitDepthDetection = "com.biking.RateSync-Key-BitDepthDetection"
     private let kShellScriptPath = "KeyShellScriptPath"
     private let kUserPreferSampleRateMultiples = "PreferSampleRateMultiples"
     private let kMonitoredBundleIdentifier = "com.biking.RateSync-Key-MonitoredBundleIdentifier"
@@ -24,6 +25,7 @@ class Defaults: ObservableObject {
         UserDefaults.standard.register(defaults: [
             kUserPreferIconStatusBarItem : true,
             kUserPreferBitDepthDisplay : true,
+            kUserPreferBitDepthDetection : false,
             kUserPreferSampleRateMultiples : false,
             kMonitoredBundleIdentifier : Defaults.appleMusicBundleIdentifier,
             kAutoEQEnabled : false
@@ -32,6 +34,7 @@ class Defaults: ObservableObject {
         self.shellScriptPath = UserDefaults.standard.string(forKey: kShellScriptPath)
         self.userPreferIconStatusBarItem = UserDefaults.standard.bool(forKey: kUserPreferIconStatusBarItem)
         self.userPreferBitDepthDisplay = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDisplay)
+        self.userPreferBitDepthDetection = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDetection)
         self.userPreferSampleRateMultiples = UserDefaults.standard.bool(forKey: kUserPreferSampleRateMultiples)
         self.monitoredBundleIdentifier = UserDefaults.standard.string(forKey: kMonitoredBundleIdentifier)
         self.autoEQEnabled = UserDefaults.standard.bool(forKey: kAutoEQEnabled)
@@ -67,6 +70,12 @@ class Defaults: ObservableObject {
     @Published var userPreferBitDepthDisplay: Bool {
         willSet {
             UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDisplay)
+        }
+    }
+
+    @Published var userPreferBitDepthDetection: Bool {
+        willSet {
+            UserDefaults.standard.set(newValue, forKey: kUserPreferBitDepthDetection)
         }
     }
 
