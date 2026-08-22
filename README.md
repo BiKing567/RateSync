@@ -2,7 +2,7 @@
   <img width="200" alt="RateSync Icon" src="./RateSync_Icon.png">
 </p>
 
-# RateSync
+<h1 align="center">RateSync</h1>
 
 <p align="center">
   <img src="https://img.shields.io/github/v/release/BiKing567/RateSync?style=flat-square" alt="release">
