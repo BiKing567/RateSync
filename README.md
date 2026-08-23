@@ -4,6 +4,8 @@
 
 <h1 align="center">RateSync</h1>
 
+[English](README_EN.md) | 简体中文
+
 <p align="center">
   <img src="https://img.shields.io/github/v/release/BiKing567/RateSync?style=flat-square" alt="release">
   <img src="https://img.shields.io/badge/license-GPL--3.0-green?style=flat-square" alt="license">
