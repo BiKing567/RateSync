@@ -1024,6 +1024,20 @@ class OutputDevices: ObservableObject {
         }
     }
     
+    /// Re-applies the current track when bit depth detection is enabled so stale pre-toggle state cannot make the next evaluation a no-op.
+    func bitDepthPreferenceDidChange() {
+        processQueue.async { [weak self] in
+            guard let self, let track = self.currentTrack, Defaults.shared.userPreferBitDepthDetection else { return }
+            self.trackAndSample.removeValue(forKey: track)
+            self.trackAndBitDepth.removeValue(forKey: track)
+            self.previousSampleRate = nil
+            self.previousBitDepth = nil
+            self.pendingCandidateRate = nil
+            self.pendingCandidateFirstSeen = nil
+            self.switchLatestSampleRate(for: track)
+        }
+    }
+
     func trackDidChange(_ newTrack: TrackInfo, eventDate: Date? = nil) {
         self.previousTrack = self.currentTrack
         self.currentTrack = MediaTrack(trackInfo: newTrack)

@@ -71,8 +71,9 @@ I believe many people would appreciate this improvement, which is why this proje
 
 ## Prerequisites
 Due to how the app works, it is not — and cannot be — sandboxed.
+Because the app uses the `OSLog` API, the following requirement applies:
+- The user running RateSync must be an **administrator**. This is untested and inferred from [this thread on the Apple Developer Forums](https://developer.apple.com/forums/thread/677068).
 - Lossless must be enabled in the Apple Music app. (Needless to say.)
-- The user running RateSync must be an **administrator** only for the system-log parsing path (`OSLog` API requirement, inferred from [this thread on the Apple Developer Forums](https://developer.apple.com/forums/thread/677068)). Without it the app falls back to the MediaRemote probe and preset sample rates, and switching still works.
 
 Other than that, it should run on any Mac with macOS 11.4 or later.
 

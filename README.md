@@ -71,8 +71,9 @@ RateSync 以菜单栏应用的形式常驻运行。它通过 MediaRemote 框架�
 
 ## 前置条件
 由于应用的工作方式，该应用没有、也无法进行沙盒化。
+由于使用了 `OSLog` API，还有以下要求：
+- 运行 RateSync 的用户必须是**管理员**。这一点未经测试，是基于[Apple Developer Forums 上这个帖子](https://developer.apple.com/forums/thread/677068)的推断。
 - Apple Music 应用必须开启无损模式。（当然，这是必然的）
-- 仅当需要通过系统日志解析解码器采样率时，运行 RateSync 的用户才需要是**管理员**（`OSLog` API 的要求，参见[Apple Developer Forums 上这个帖子](https://developer.apple.com/forums/thread/677068)）。缺少该权限时，应用会自动回退到 MediaRemote 探测与预设采样率，依然可以完成切换。
 
 除此之外，它应该可以在任何运行 macOS 11.4 或更高版本的 Mac 上运行。
 

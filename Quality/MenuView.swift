@@ -26,6 +26,7 @@ struct MenuView: View {
 
             Button {
                 defaults.userPreferBitDepthDetection.toggle()
+                outputDevices.bitDepthPreferenceDidChange()
             } label: {
                 HStack {
                     Text("Bit Depth Switching", comment: "Menu toggle: switch bit depth along with sample rate")
