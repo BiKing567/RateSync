@@ -17,7 +17,7 @@
 
 RateSync automatically switches the sample rate and bit depth of your current audio output device to match the lossless song currently playing.
 
-Version 3.0 adds multi-app monitoring support: it can detect the playback state of Apple Music, Spotify, and NetEase Cloud Music at the same time, probing current playback info through the MediaRemote framework.
+Version 3.0 adds multi-app monitoring support: it can detect the playback state of Apple Music, Spotify, NetEase Cloud Music, and QQ Music at the same time, probing current playback info through the MediaRemote framework.
 
 For example, if the next song is a Hi-Res lossless track with a 192 kHz sample rate, RateSync will switch the device's sample rate to 192 kHz as soon as possible.
 
@@ -46,7 +46,7 @@ If you want RateSync to launch automatically at login, add it in System Settings
 
 ## App details
 
-RateSync runs resident in the menu bar. It monitors the playback state of multiple music apps (Apple Music, Spotify, NetEase Cloud Music) in real time via the MediaRemote framework, and automatically switches the sample rate and bit depth of your audio output device to match the currently playing song.
+RateSync runs resident in the menu bar. It monitors the playback state of multiple music apps (Apple Music, Spotify, NetEase Cloud Music, QQ Music) in real time via the MediaRemote framework, and automatically switches the sample rate and bit depth of your audio output device to match the currently playing song.
 
 The screenshot below shows the monitoring-source picker, where you can choose which music apps to monitor:
 
@@ -71,9 +71,8 @@ I believe many people would appreciate this improvement, which is why this proje
 
 ## Prerequisites
 Due to how the app works, it is not — and cannot be — sandboxed.
-Because it uses the `OSLog` API, there are additional requirements:
-- The user running RateSync must be an **administrator**. This is untested and inferred from [this thread on the Apple Developer Forums](https://developer.apple.com/forums/thread/677068).
 - Lossless must be enabled in the Apple Music app. (Needless to say.)
+- The user running RateSync must be an **administrator** only for the system-log parsing path (`OSLog` API requirement, inferred from [this thread on the Apple Developer Forums](https://developer.apple.com/forums/thread/677068)). Without it the app falls back to the MediaRemote probe and preset sample rates, and switching still works.
 
 Other than that, it should run on any Mac with macOS 11.4 or later.
 

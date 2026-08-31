@@ -8,16 +8,16 @@
 import SwiftUI
 
 struct MenuView: View {
-    
+
     @EnvironmentObject private var outputDevices: OutputDevices
     @EnvironmentObject private var defaults: Defaults
-    
+
     var body: some View {
         VStack {
             ContentView()
-            
+
             Divider()
-            
+
             Button {
                 defaults.userPreferIconStatusBarItem.toggle()
             } label: {
@@ -28,18 +28,18 @@ struct MenuView: View {
                 defaults.userPreferBitDepthDetection.toggle()
             } label: {
                 HStack {
-                    Text("Bit Depth Switching")
+                    Text("Bit Depth Switching", comment: "Menu toggle: switch bit depth along with sample rate")
                     if defaults.userPreferBitDepthDetection {
                         Image(systemName: "checkmark")
                     }
                 }
             }
-            
+
             Button {
                 defaults.userPreferSampleRateMultiples.toggle()
             } label: {
                 HStack {
-                    Text("Prefer Closest Sample Rate Multiple")
+                    Text("Prefer Closest Sample Rate Multiple", comment: "Menu toggle: fall back to a sample rate multiple the device supports")
                     if defaults.userPreferSampleRateMultiples {
                         Image(systemName: "checkmark")
                     }
@@ -56,16 +56,16 @@ struct MenuView: View {
                     }
                 } label: {
                     HStack {
-                        Text("Auto EQ by Genre (Apple Music)")
+                        Text("Auto EQ by Genre (Apple Music)", comment: "Menu toggle: auto-switch Apple Music EQ preset by genre")
                         if defaults.autoEQEnabled {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
             } label: {
-                Text("Experimental Features")
+                Text("Experimental Features", comment: "Submenu title for experimental toggles")
             }
-            
+
             Menu {
                 Button {
                     defaults.monitoredBundleIdentifier = Defaults.appleMusicBundleIdentifier
@@ -74,9 +74,9 @@ struct MenuView: View {
                     if defaults.monitoredBundleIdentifier == Defaults.appleMusicBundleIdentifier {
                         Image(systemName: "checkmark")
                     }
-                    Text("Apple Music")
+                    Text("Apple Music", comment: "Monitoring source option: Apple Music app")
                 }
-                
+
                 Button {
                     defaults.monitoredBundleIdentifier = Defaults.spotifyBundleIdentifier
                     outputDevices.reevaluateNowPlaying()
@@ -84,9 +84,9 @@ struct MenuView: View {
                     if defaults.monitoredBundleIdentifier == Defaults.spotifyBundleIdentifier {
                         Image(systemName: "checkmark")
                     }
-                    Text("Spotify")
+                    Text("Spotify", comment: "Monitoring source option: Spotify app")
                 }
-                
+
                 Button {
                     defaults.monitoredBundleIdentifier = Defaults.neteaseMusicBundleIdentifier
                     outputDevices.reevaluateNowPlaying()
@@ -94,9 +94,19 @@ struct MenuView: View {
                     if defaults.monitoredBundleIdentifier == Defaults.neteaseMusicBundleIdentifier {
                         Image(systemName: "checkmark")
                     }
-                    Text("NetEase Music")
+                    Text("NetEase Music", comment: "Monitoring source option: NetEase CloudMusic app")
                 }
-                
+
+                Button {
+                    defaults.monitoredBundleIdentifier = Defaults.qqMusicBundleIdentifier
+                    outputDevices.reevaluateNowPlaying()
+                } label: {
+                    if defaults.monitoredBundleIdentifier == Defaults.qqMusicBundleIdentifier {
+                        Image(systemName: "checkmark")
+                    }
+                    Text("QQ Music", comment: "Monitoring source option: QQ Music app")
+                }
+
                 Button {
                     defaults.monitoredBundleIdentifier = nil
                     outputDevices.reevaluateNowPlaying()
@@ -104,12 +114,12 @@ struct MenuView: View {
                     if defaults.monitoredBundleIdentifier == nil {
                         Image(systemName: "checkmark")
                     }
-                    Text("All Apps")
+                    Text("All Apps", comment: "Monitoring source option: monitor every app")
                 }
             } label: {
-                Text("Monitor Source")
+                Text("Monitor Source", comment: "Submenu title for choosing which app to monitor")
             }
-            
+
             Menu {
                 Button {
                     outputDevices.selectedOutputDevice = nil
@@ -118,7 +128,7 @@ struct MenuView: View {
                     if outputDevices.selectedOutputDevice == nil {
                         Image(systemName: "checkmark")
                     }
-                    Text("Default Device")
+                    Text("Default Device", comment: "Device selection option: use the system default output device")
                 }
 
                 ForEach(outputDevices.outputDevices, id: \.uid) { device in
@@ -133,50 +143,56 @@ struct MenuView: View {
                     }
                 }
             } label: {
-                Text("Selected Device")
+                Text("Selected Device", comment: "Submenu title for choosing the output device")
             }
-            
+
             Menu {
-                Text("Version - \(currentVersion)")
-                Text("Build - \(currentBuild)")
-                Button("Check for Updates...") {
+                Text("Version - \(currentVersion)", comment: "About menu: app version, %@ is the version string")
+                Text("Build - \(currentBuild)", comment: "About menu: build number, %@ is the build string")
+                Button {
                     // User-initiated check; button actions run on the main thread.
                     MenuBarController.shared.updaterController.updater.checkForUpdates()
+                } label: {
+                    Text("Check for Updates...", comment: "About menu: Sparkle update check button")
                 }
             } label: {
-                Text("About")
+                Text("About", comment: "Submenu title for version and update info")
             }
-            
+
             Menu {
-                Button("Select Script...") {
+                Button {
                     let panel = NSOpenPanel()
                     panel.canChooseFiles = true
                     panel.canChooseDirectories = false
                     panel.allowsMultipleSelection = false
-                    panel.message = "Select a script that should be invoked when sample rate changes."
-                    
+                    panel.message = NSLocalizedString("Select a script that should be invoked when sample rate changes.", comment: "Script selection panel message")
+
                     panel.begin { response in
                         let path = panel.url?.path
                         DispatchQueue.main.async { [weak defaults] in
                             defaults?.shellScriptPath = path
                         }
                     }
+                } label: {
+                    Text("Select Script...", comment: "Scripting menu: choose a shell script to run")
                 }
-                
-                Button("Clear Selection") {
+
+                Button {
                     defaults.shellScriptPath = nil
+                } label: {
+                    Text("Clear Selection", comment: "Scripting menu: clear the chosen script")
                 }
-                
-                Text(defaults.shellScriptPath ?? "No selection")
-                
+
+                Text(defaults.shellScriptPath ?? NSLocalizedString("No selection", comment: "Scripting menu: no script chosen yet"))
+
             } label: {
-                Text("Scripting")
+                Text("Scripting", comment: "Submenu title for the user script feature")
             }
-            
+
             Button {
                 NSApp.terminate(self)
             } label: {
-                Text("Quit RateSync")
+                Text("Quit RateSync", comment: "Menu item: quit the app")
             }
         }
     }

@@ -17,7 +17,7 @@
 
 RateSync 会自动将当前音频输出设备的采样率和位深度切换到与当前播放的无损歌曲一致的值。
 
-3.0 版本新增多应用监控支持，可同时检测 Apple Music、Spotify、网易云音乐的播放状态，通过 MediaRemote 框架探测获取当前播放信息。
+3.0 版本新增多应用监控支持，可同时检测 Apple Music、Spotify、网易云音乐、QQ音乐的播放状态，通过 MediaRemote 框架探测获取当前播放信息。
 
 例如，如果下一首播放的歌曲是采样率为 192kHz 的 Hi-Res 无损曲目，RateSync 会尽快将设备采样率切换至 192kHz。
 
@@ -46,7 +46,7 @@ RateSync 会自动将当前音频输出设备的采样率和位深度切换到�
 
 ## 应用详情
 
-RateSync 以菜单栏应用的形式常驻运行。它通过 MediaRemote 框架实时监测来自多个音乐应用（Apple Music、Spotify、网易云音乐）的播放状态，并自动将音频输出设备的采样率和位深度切换到与当前播放歌曲一致的参数。
+RateSync 以菜单栏应用的形式常驻运行。它通过 MediaRemote 框架实时监测来自多个音乐应用（Apple Music、Spotify、网易云音乐、QQ音乐）的播放状态，并自动将音频输出设备的采样率和位深度切换到与当前播放歌曲一致的参数。
 
 下图展示了监听来源选择功能，你可以选择需要监控的音乐应用：
 
@@ -71,9 +71,8 @@ RateSync 以菜单栏应用的形式常驻运行。它通过 MediaRemote 框架�
 
 ## 前置条件
 由于应用的工作方式，该应用没有、也无法进行沙盒化。
-由于使用了 `OSLog` API，还有以下要求：
-- 运行 RateSync 的用户必须是**管理员**。这一点未经测试，是基于[Apple Developer Forums 上这个帖子](https://developer.apple.com/forums/thread/677068)的推断。
 - Apple Music 应用必须开启无损模式。（当然，这是必然的）
+- 仅当需要通过系统日志解析解码器采样率时，运行 RateSync 的用户才需要是**管理员**（`OSLog` API 的要求，参见[Apple Developer Forums 上这个帖子](https://developer.apple.com/forums/thread/677068)）。缺少该权限时，应用会自动回退到 MediaRemote 探测与预设采样率，依然可以完成切换。
 
 除此之外，它应该可以在任何运行 macOS 11.4 或更高版本的 Mac 上运行。
 

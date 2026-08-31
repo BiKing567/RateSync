@@ -13,6 +13,23 @@ import SimplyCoreAudio
 import CoreAudioTypes
 import MediaRemoteAdapter
 
+/// Where a candidate sample rate came from. Only Apple Music's own paths are
+/// known to report a transient rate before settling, so the gate that guards
+/// against that misreport is sized per source.
+private enum RateSource {
+    case mediaRemoteProbe
+    case appleMusicPriority
+    case decoderLog
+    case audioQueueLog
+    /// An AudioQueue log line that predates the current track change, so it
+    /// describes the PREVIOUS track. Retries widen the staleness filter by
+    /// 1.5 s, so such a line can legitimately reach applyStats. It must never
+    /// be applied immediately - it keeps the conservative gate, which holds
+    /// long enough for the new track's own line to be written.
+    case staleAudioQueueLog
+    case preset
+}
+
 class OutputDevices: ObservableObject {
     @Published var selectedOutputDevice: AudioDevice? // auto if nil
     @Published var defaultOutputDevice: AudioDevice?
@@ -44,9 +61,80 @@ class OutputDevices: ObservableObject {
     // overwhelming evidence: transient misreports (e.g. Atmos handshakes)
     // never survive this long, while genuine corrections do.
     private static let lockedOverridePersistence: TimeInterval = 12.0
+    // Plausibility bounds for parsed/probed sample rates and bit depths.
+    // The log parsers accept any text that Double()/Int() can read, so a
+    // malformed or hostile log line ("0 Hz", "-96000 Hz",
+    // "99999999999999-bit source") would otherwise reach CoreAudio and
+    // silently force the device to the lowest/highest supported format.
+    // 768 kHz and 64 bit are far above anything real hardware advertises.
+    static let maxPlausibleSampleRate: Double = 768_000
+    static let maxPlausibleBitDepth: Int = 64
+    // Cap on retained per-track results, so long listening sessions cannot
+    // grow the caches without bound (one entry per distinct MediaTrack).
+    private static let maxCachedTracks = 200
     // Stability confirmation for post-window rate changes (see applyStats).
     private var pendingCandidateRate: Float64?
     private var pendingCandidateFirstSeen: Date?
+
+    /// How long a parsed OSLog result may be reused before the archive is
+    /// queried again. One query costs ~0.70 s of blocking work (measured on
+    /// this machine, and independent of the window size: 5 s, 15 s and 60 s
+    /// all measured ~0.70 s), and the gate re-evaluates every 0.5 s, so a
+    /// single track change would otherwise pay for a dozen identical
+    /// queries. The TTL is short enough that a genuinely new log line - a
+    /// mid-track format change creates a new AudioQueue and therefore a new
+    /// line - is still picked up on the next poll.
+    private static let logStatsTTL: TimeInterval = 1.5
+    /// Caches the PARSED stats, not the post-filter result: cached entries
+    /// are re-filtered against `lastTrackChangeDate` on every read, so a
+    /// cached line from the previous track can never be applied to the new
+    /// one. Only non-empty results are cached (see statsFromLogs) so the
+    /// "log line not written yet" retry always re-queries.
+    private var logStatsCache: [String : (stats: [CMPlayerStats], at: Date)] = [:]
+
+    /// Apps observed to report no audio format through MediaRemote. Every
+    /// probe costs a 1.0 s timeout wait, paid on EVERY gate re-evaluation,
+    /// so once an app has been seen to report nothing repeatedly we stop
+    /// asking and go straight to the log chain. Two consecutive misses are
+    /// required, so a transient failure (app mid-launch, Now Playing
+    /// payload not populated yet) cannot poison the cache.
+    private var silentProbeApps: Set<String> = []
+    private var probeMissCounts: [String : Int] = [:]
+    private static let probeMissesBeforeSkip = 2
+
+    /// Gate policy per rate source. The 3.5 s boundary window + 2.0 s
+    /// stability confirmation exist because Apple Music reports a transient
+    /// 44.1 kHz for several seconds on Dolby Atmos tracks before settling -
+    /// both in its decoder logs and in its MediaRemote payload - so a
+    /// differing rate must not be trusted immediately.
+    /// AudioQueue sources do NOT behave that way: "New output" is written
+    /// once, at queue creation, with the final rate. Measured NetEase
+    /// CloudMusic logs (30-day archive) contain exactly one such line per
+    /// track, with no transient re-report - the closest two lines are
+    /// 12.13 s apart and are genuine track changes. Holding the full gate
+    /// there only adds ~5.5 s of dead time before a rate that was already
+    /// correct on first read.
+    private struct GatePolicy {
+        let boundary: TimeInterval
+        let stability: TimeInterval
+        let lockedOverride: TimeInterval
+
+        static let standard = GatePolicy(boundary: 3.5, stability: 2.0, lockedOverride: 12.0)
+        /// AudioQueue log sources: a single confirmation tick, so a
+        /// straggler line is not applied on its own, then apply.
+        static let audioQueue = GatePolicy(boundary: 0, stability: 0.6, lockedOverride: 12.0)
+    }
+
+    private static func gatePolicy(for source: RateSource) -> GatePolicy {
+        switch source {
+        case .audioQueueLog:
+            return .audioQueue
+        case .staleAudioQueueLog, .mediaRemoteProbe, .appleMusicPriority, .decoderLog, .preset:
+            return .standard
+        }
+    }
+
+
     var trackAndSample = [MediaTrack : Float64]()
     var trackAndBitDepth = [MediaTrack : Int]()
     var previousTrack: MediaTrack?
@@ -57,8 +145,13 @@ class OutputDevices: ObservableObject {
     init() {
         self.outputDevices = self.coreAudio.allOutputDevices
         self.defaultOutputDevice = self.coreAudio.defaultOutputDevice
+        // Restore the device the user picked in a previous session.
+        // The UID is persisted but was never read back, so the selection
+        // silently reverted to "Default Device" on every launch.
+        self.restoreSelectedDevice()
         self.getDeviceSampleRate()
-        
+
+
         changesCancellable =
             NotificationCenter.default.publisher(for: .deviceListChanged).sink(receiveValue: { _ in
                 self.outputDevices = self.coreAudio.allOutputDevices
@@ -81,6 +174,20 @@ class OutputDevices: ObservableObject {
         startPolling()
     }
     
+    /// Re-applies the persisted output device selection at launch.
+    /// Falls back to "Default Device" when the saved device is gone
+    /// (unplugged, renamed) or when none was ever chosen.
+    private func restoreSelectedDevice() {
+        guard let uid = Defaults.shared.selectedDeviceUID else { return }
+        guard let device = self.outputDevices.first(where: { $0.uid == uid }) else {
+            Logger.switching.info("[Restore] saved device \(uid, privacy: .public) no longer present, using default")
+            Defaults.shared.selectedDeviceUID = nil
+            return
+        }
+        self.selectedOutputDevice = device
+        Logger.switching.info("[Restore] restored selected device \(device.name, privacy: .public)")
+    }
+
     deinit {
         changesCancellable?.cancel()
         defaultChangesCancellable?.cancel()
@@ -194,13 +301,27 @@ class OutputDevices: ObservableObject {
         return Self.resolveBundleIdentifier(track: currentTrack) == Defaults.appleMusicBundleIdentifier
     }
 
+    /// True only when the Music process is actually running.
+    /// Every `tell application "Music"` block launches Music if it is not
+    /// already running, so any AppleScript query must be gated on this -
+    /// otherwise monitoring a non-Apple-Music app would start Music as a
+    /// side effect of the priority check below.
+    private var isAppleMusicRunning: Bool {
+        NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == Defaults.appleMusicBundleIdentifier
+        }
+    }
+
     /// When another player triggers the event but Apple Music is playing at
     /// the same time, Apple Music wins: its sample rate is applied. Returns
     /// nil when the event source is Apple Music itself (its normal chain
-    /// already handles it), when Apple Music is not playing, or when the
-    /// query fails (e.g. automation permission missing - safe degradation).
+    /// already handles it), when Apple Music is not running/not playing, or
+    /// when the query fails (e.g. automation permission missing - safe degradation).
     private func appleMusicPriorityStat() -> CMPlayerStats? {
         guard !isAppleMusicSource else { return nil }
+        // Music is queried on every switch for non-Apple-Music sources.
+        // Without this check the AppleScript below would launch Music.
+        guard isAppleMusicRunning else { return nil }
         guard let state = appleMusicPlaybackState(), state.isPlaying,
               let sampleRate = state.sampleRate, sampleRate > 0 else {
             return nil
@@ -286,6 +407,10 @@ class OutputDevices: ObservableObject {
         }
         guard isAppleMusicSource else {
             Logger.switching.info("[EQ] skipped: source is not Apple Music (\(Self.resolveBundleIdentifier(track: self.currentTrack) ?? "unknown", privacy: .public))")
+            return
+        }
+        guard isAppleMusicRunning else {
+            Logger.switching.info("[EQ] skipped: Music is not running")
             return
         }
         guard let genre = appleMusicGenre() else {
@@ -390,11 +515,12 @@ class OutputDevices: ObservableObject {
     }
     
     func getAllStats(process: String = "Music",
-                     parser: ([SimpleConsole]) -> [CMPlayerStats] = CMPlayerParser.parseCoreAudioConsoleLogs) -> [CMPlayerStats] {
+                     parser: ([SimpleConsole]) -> [CMPlayerStats] = CMPlayerParser.parseCoreAudioConsoleLogs,
+                     durationSeconds: TimeInterval = 5.0) -> [CMPlayerStats] {
         var allStats = [CMPlayerStats]()
-        
+
         do {
-            let coreAudioLogs = try Console.getRecentEntries(type: .coreAudio, process: process)
+            let coreAudioLogs = try Console.getRecentEntries(type: .coreAudio, process: process, durationSeconds: durationSeconds)
             allStats.append(contentsOf: parser(coreAudioLogs))
             Logger.switching.info("[getAllStats] \(allStats)")
         }
@@ -424,6 +550,18 @@ class OutputDevices: ObservableObject {
         // (sample rate / bit depth), when it reports it. This avoids OSLog
         // parsing entirely and works without admin privileges. Apps that do
         // not report it fall through to the log-based chain below.
+        //
+        // Apps already known to report nothing are skipped entirely: a miss
+        // costs the probe's 1.0 s timeout wait, and the gate re-evaluates
+        // every 0.5 s, so that wait is paid on every single re-evaluation.
+        if let bundleID = Self.resolveBundleIdentifier(track: currentTrack),
+           silentProbeApps.contains(bundleID) {
+            Logger.switching.info("[MRProbe] skipping probe for silent app \(bundleID, privacy: .public)")
+            self.processQueue.async {
+                self.runLogChain(expectedTrack: expectedTrack, recursion: recursion)
+            }
+            return
+        }
         MediaRemoteSampleRateProbe.fetchAudioFormat(expectedPID: currentTrack?.pid) { [weak self] sampleRate, bitDepth in
             guard let self else { return }
             // The probe callback arrives on an arbitrary queue; hop back to
@@ -440,7 +578,7 @@ class OutputDevices: ObservableObject {
                 // source's. Only checked for non-Apple-Music sources.
                 if let amStat = self.appleMusicPriorityStat() {
                     Logger.switching.info("[AM Priority] Apple Music is playing, using its sample rate")
-                    self.applyStats([amStat], expectedTrack: expectedTrack, recursion: recursion)
+                    self.applyStats([amStat], source: .appleMusicPriority, expectedTrack: expectedTrack, recursion: recursion)
                     // Keep Apple Music's EQ in sync with its own genre too.
                     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                         self?.applyAppleMusicEQIfNeeded()
@@ -450,24 +588,73 @@ class OutputDevices: ObservableObject {
                 if let sampleRate, sampleRate > 0 {
                     let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: self.previousBitDepth ?? 24, date: Date())
                     Logger.switching.info("[MRProbe] direct audio format: \(sampleRate) Hz, \(bitDepth ?? -1) bit")
-                    self.applyStats([stat], expectedTrack: expectedTrack, recursion: recursion)
+                    self.applyStats([stat], source: .mediaRemoteProbe, expectedTrack: expectedTrack, recursion: recursion)
                 } else {
-                    let logStats = self.statsFromLogs(expectedTrack: expectedTrack, recursion: recursion)
-                    // Lowest-priority fallback: known apps that neither report
-                    // Now Playing audio format keys nor emit parseable decoder
-                    // logs get a preset sample rate, so switching still happens.
-                    if logStats.isEmpty,
-                       let track = self.currentTrack,
-                       let bundleID = Self.resolveBundleIdentifier(track: track),
-                       let preset = Self.presetSampleRate(for: bundleID) {
-                        let stat = CMPlayerStats(sampleRate: preset, bitDepth: 16, date: Date())
-                        Logger.switching.info("[Preset] \(bundleID) -> \(preset) Hz")
-                        self.applyStats([stat], expectedTrack: expectedTrack, recursion: recursion)
-                    } else {
-                        self.applyStats(logStats, expectedTrack: expectedTrack, recursion: recursion)
-                    }
+                    self.recordProbeMissIfPossible()
+                    self.runLogChain(expectedTrack: expectedTrack, recursion: recursion)
                 }
             }
+        }
+    }
+
+    /// Log-based rate resolution plus the preset fallback, run after the
+    /// MediaRemote probe reported nothing (or was skipped).
+    private func runLogChain(expectedTrack: MediaTrack?, recursion: Bool) {
+        let logStats = self.statsFromLogs(expectedTrack: expectedTrack, recursion: recursion)
+        // Lowest-priority fallback: known apps that neither report
+        // Now Playing audio format keys nor emit parseable decoder
+        // logs get a preset sample rate, so switching still happens.
+        if logStats.isEmpty,
+           let track = self.currentTrack,
+           let bundleID = Self.resolveBundleIdentifier(track: track),
+           let preset = Self.presetSampleRate(for: bundleID) {
+            let stat = CMPlayerStats(sampleRate: preset, bitDepth: 16, date: Date())
+            Logger.switching.info("[Preset] \(bundleID) -> \(preset) Hz")
+            self.applyStats([stat], source: .preset, expectedTrack: expectedTrack, recursion: recursion)
+        } else {
+            // The AudioQueue parser is the only log parser used for
+            // non-Apple-Music processes; Apple Music's own decoder parser
+            // feeds the log entries that the Atmos gate was designed for.
+            let source: RateSource = (Self.resolveProcessName(track: currentTrack) == "Music")
+                ? .decoderLog
+                : self.audioQueueSource(for: logStats)
+            self.applyStats(logStats, source: source, expectedTrack: expectedTrack, recursion: recursion)
+        }
+    }
+
+    /// Classifies an AudioQueue log result for the gate.
+    ///
+    /// A line written BEFORE the current track change describes the previous
+    /// track. Recursive retries widen the staleness filter by 1.5s, so such a
+    /// line does reach applyStats - deliberately, because on a slow first
+    /// write it is the only available data. It is still real data, but it is
+    /// not trustworthy enough to apply immediately: the fast AudioQueue gate
+    /// would lock in the OLD track's rate before the new line lands. Those
+    /// results fall back to the conservative gate, which confirms long enough
+    /// for the new track's own line to be written.
+    private func audioQueueSource(for stats: [CMPlayerStats]) -> RateSource {
+        guard let lastTrackChangeDate, let newest = stats.map(\.date).max() else {
+            return .audioQueueLog
+        }
+        if newest < lastTrackChangeDate {
+            Logger.switching.info("[Gate] AudioQueue log predates track change, using conservative gate")
+            return .staleAudioQueueLog
+        }
+        return .audioQueueLog
+    }
+
+    /// Tracks consecutive MediaRemote probe misses per app. After
+    /// `probeMissesBeforeSkip` misses the app is treated as reporting no
+    /// audio format, so later evaluations skip the 1.0 s timeout wait.
+    /// Requiring two misses keeps a transient failure (app mid-launch,
+    /// Now Playing payload not yet populated) from disabling the probe.
+    private func recordProbeMissIfPossible() {
+        guard let bundleID = Self.resolveBundleIdentifier(track: currentTrack) else { return }
+        let count = (probeMissCounts[bundleID] ?? 0) + 1
+        probeMissCounts[bundleID] = count
+        if count >= Self.probeMissesBeforeSkip, !silentProbeApps.contains(bundleID) {
+            silentProbeApps.insert(bundleID)
+            Logger.switching.info("[MRProbe] \(bundleID, privacy: .public) reported no format \(count)x, skipping probe from now on")
         }
     }
 
@@ -503,7 +690,13 @@ class OutputDevices: ObservableObject {
             allStats = self.getAllStats(process: processName)
         } else {
             Logger.switching.info("log chain for process \(processName) via AudioQueue parser")
-            allStats = self.getAllStats(process: processName, parser: CMPlayerParser.parseAudioQueueConsoleLogs)
+            // AudioQueue "New output" entries are written once per queue creation
+            // and are these apps' ONLY rate source (no probe keys, no AppleScript).
+            // The query window must outlive the gate confirmation so the single
+            // log line cannot expire mid-gate - observed as "first play never
+            // switches until the track is replayed". Stale entries stay excluded
+            // by the lastTrackChangeDate filter below.
+            allStats = self.cachedAudioQueueStats(process: processName)
         }
         // Ignore logs from before the current track started playing,
         // as stale logs from the previous track cause wrong switches.
@@ -525,17 +718,69 @@ class OutputDevices: ObservableObject {
         return allStats
     }
 
+    /// AudioQueue stats for `process`, reusing a recent parse when possible.
+    ///
+    /// One OSLog query costs ~0.70 s of blocking work regardless of window
+    /// size, and the gate re-evaluates every 0.5 s, so an uncached chain pays
+    /// for a dozen near-identical queries per track change. Results are
+    /// cached for `logStatsTTL`.
+    ///
+    /// Only NON-EMPTY results are cached: an empty result usually means the
+    /// log line has not been written yet, and caching that would freeze the
+    /// retry loop into returning nothing until the TTL expires.
+    ///
+    /// The cached value is the PARSED list, not the post-filter result, so the
+    /// `lastTrackChangeDate` filter below still runs on every read and a line
+    /// belonging to the previous track can never be applied to the new one.
+    private func cachedAudioQueueStats(process: String) -> [CMPlayerStats] {
+        let key = "aq:\(process)"
+        if let cached = logStatsCache[key],
+           Date().timeIntervalSince(cached.at) < Self.logStatsTTL {
+            Logger.switching.info("[LogCache] hit for \(process, privacy: .public) (\(cached.stats.count) stats)")
+            return cached.stats
+        }
+        let stats = self.getAllStats(process: process,
+                                     parser: CMPlayerParser.parseAudioQueueConsoleLogs,
+                                     durationSeconds: 60)
+        if stats.isEmpty {
+            // Do not cache "nothing found" - the line may simply not be
+            // written yet, and the gate must be able to re-query.
+            logStatsCache.removeValue(forKey: key)
+            Logger.switching.info("[LogCache] miss for \(process, privacy: .public) (no stats, not cached)")
+        } else {
+            logStatsCache[key] = (stats, Date())
+            Logger.switching.info("[LogCache] stored for \(process, privacy: .public) (\(stats.count) stats)")
+        }
+        return stats
+    }
+
     /// Applies the best matching device format for the given stats, and
     /// schedules one retry when nothing usable was found yet.
-    private func applyStats(_ allStats: [CMPlayerStats], expectedTrack: MediaTrack?, recursion: Bool) {
+    private func applyStats(_ allStats: [CMPlayerStats], source: RateSource = .decoderLog, expectedTrack: MediaTrack?, recursion: Bool) {
+        let policy = Self.gatePolicy(for: source)
         let defaultDevice = self.selectedOutputDevice ?? self.defaultOutputDevice
 
         var didFindStat = false
 
-        if let first = allStats.first, let supported = defaultDevice?.nominalSampleRates {
+        if let first = allStats.first,
+           let supported = defaultDevice?.nominalSampleRates,
+           // Reject implausible rates before they can reach CoreAudio:
+           // 0 Hz / negative rates would select the LOWEST supported rate
+           // and absurd rates the highest, silently forcing the device to
+           // an extreme format. A rejected stat leaves didFindStat false, so
+           // the single non-recursive retry below can still pick up a later,
+           // valid reading without starting a retry loop.
+           first.sampleRate.isFinite,
+           first.sampleRate > 0,
+           first.sampleRate <= Self.maxPlausibleSampleRate {
             didFindStat = true
             let sampleRate = Float64(first.sampleRate)
-            let bitDepth = Int32(first.bitDepth)
+            // Clamp instead of truncating, and clamp before use:
+            // Int32(truncatingIfNeeded:) silently turns an absurd depth
+            // into a bogus but plausible-looking value
+            // (99999999999999 -> 276447231). A garbage depth must not cost
+            // us a valid rate, so it is clamped, not rejected.
+            let bitDepth = Int32(clamping: min(max(first.bitDepth, 1), Self.maxPlausibleBitDepth))
 
             // Boundary gating: right after a track change, players
             // transitioning between formats (e.g. Dolby Atmos) report an
@@ -554,7 +799,7 @@ class OutputDevices: ObservableObject {
             } ?? .infinity
             let rateDiffersFromDevice = defaultDevice?.nominalSampleRate != sampleRate
             if rateDiffersFromDevice {
-                if sinceTrackChange < Self.boundaryWindow {
+                if sinceTrackChange < policy.boundary {
                     Logger.switching.info("[Gate] candidate \(sampleRate, privacy: .public) != device \(defaultDevice?.nominalSampleRate ?? -1, privacy: .public) Hz inside boundary window, re-evaluating in 0.5s")
                     processQueue.asyncAfter(deadline: .now() + 0.5) {
                         self.switchLatestSampleRate(for: expectedTrack, recursion: true)
@@ -566,8 +811,8 @@ class OutputDevices: ObservableObject {
                 // the current track, overturning it requires the candidate to
                 // persist far longer (transient handshakes never do).
                 let requiredPersistence = currentTrack.flatMap { trackAndSample[$0] } != nil
-                    ? Self.lockedOverridePersistence
-                    : Self.stabilityConfirmation
+                    ? policy.lockedOverride
+                    : policy.stability
                 let confirmed: Bool
                 if pendingCandidateRate == sampleRate,
                    let seen = pendingCandidateFirstSeen {
@@ -663,8 +908,7 @@ class OutputDevices: ObservableObject {
                 }
                 self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel), runUserScript: formatChanged)
                 if let currentTrack = currentTrack {
-                    self.trackAndSample[currentTrack] = suitableFormat.mSampleRate
-                    self.trackAndBitDepth[currentTrack] = Int(suitableFormat.mBitsPerChannel)
+                    self.cacheTrackResult(currentTrack, sampleRate: suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel))
                 }
             }
         }
@@ -678,6 +922,24 @@ class OutputDevices: ObservableObject {
         }
     }
 
+
+    /// Records the format applied for a track, under a hard size cap.
+    /// Only `currentTrack` is ever read back, but entries survive until the
+    /// next track change, so an unbounded table would retain one entry per
+    /// distinct track ever played in a long-running menu bar process.
+    private func cacheTrackResult(_ track: MediaTrack, sampleRate: Float64, bitDepth: Int) {
+        self.trackAndSample[track] = sampleRate
+        self.trackAndBitDepth[track] = bitDepth
+        // Dictionary ordering is unspecified, so this trims arbitrary
+        // victims rather than a true LRU - the cap is the safety net, and
+        // trackDidChange already removes entries as tracks move on.
+        while self.trackAndSample.count > Self.maxCachedTracks {
+            guard let victim = self.trackAndSample.keys.first(where: { $0 != self.currentTrack })
+                    ?? self.trackAndSample.keys.first else { break }
+            self.trackAndSample.removeValue(forKey: victim)
+            self.trackAndBitDepth.removeValue(forKey: victim)
+        }
+    }
 
     func getFormats(device: AudioDevice) -> [AudioStreamBasicDescription]? {
         // new sample rate + bit depth detection route
@@ -768,9 +1030,17 @@ class OutputDevices: ObservableObject {
         if self.previousTrack != self.currentTrack {
             // Unlock the new track so its sample rate can be applied. The lock is
             // per-track and must not leak across replays of the same song.
+            // Also drop the PREVIOUS track's entry: the lookup tables are
+            // only ever consulted for `currentTrack`, so any other entry is
+            // dead weight that would otherwise accumulate one per distinct
+            // track played for the lifetime of the process.
             if let currentTrack = currentTrack {
                 self.trackAndSample.removeValue(forKey: currentTrack)
                 self.trackAndBitDepth.removeValue(forKey: currentTrack)
+            }
+            if let previousTrack = previousTrack {
+                self.trackAndSample.removeValue(forKey: previousTrack)
+                self.trackAndBitDepth.removeValue(forKey: previousTrack)
             }
             // Decoder log entries are timestamped when the new track starts decoding,
             // which can be slightly before the MediaRemote event arrives. Use the event

@@ -13,7 +13,7 @@ struct SampleRateLabel: View {
         if let text = outputDevices.formattedSampleRate {
             Text(text)
         } else {
-            Text("Unknown")
+            Text("Unknown", comment: "Placeholder shown when the current sample rate is not known")
         }
     }
 }

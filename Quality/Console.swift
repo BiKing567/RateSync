@@ -6,7 +6,7 @@
 //
 // https://developer.apple.com/forums/thread/677068
 
-import OSLog
+@preconcurrency import OSLog
 import Cocoa
 
 /// Central logging for the sample-rate switching pipeline. Visible via
@@ -25,10 +25,10 @@ enum EntryType: String {
 }
 
 class Console {
-    static func getRecentEntries(type: EntryType, process: String = "Music") throws -> [SimpleConsole] {
+    static func getRecentEntries(type: EntryType, process: String = "Music", durationSeconds: TimeInterval = 5.0) throws -> [SimpleConsole] {
         var messages = [SimpleConsole]()
         let store = try OSLogStore.local()
-        let duration = store.position(timeIntervalSinceEnd: -5.0)
+        let duration = store.position(timeIntervalSinceEnd: -durationSeconds)
         let predicate = NSPredicate(format: "(subsystem = %@) AND (process = %@)", argumentArray: [type.rawValue, process])
         let entries = try store.getEntries(with: [], at: duration, matching: predicate)
         // for some reason AnySequence to Array turns it into a empty array?
