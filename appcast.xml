@@ -10,13 +10,16 @@
             <pubDate>Wed, 02 Sep 2026 15:10:20 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
             <description><![CDATA[
-                <h3>RateSync v3.1.0-beta 测试版</h3>
-                <p>想尝鲜的朋友可以先试试～</p>
+                <p>这是一个测试版，想尝鲜的朋友可以先试试，遇到问题欢迎反馈～</p>
+                <p><b>这次更新了什么？</b></p>
+                <p>优化软件稳定性</p>
                 <ul>
-                    <li><b>更安全了</b>：自动运行的脚本现在会检查是不是你自己的，防止被偷偷加东西；也加了日志防假冒检查</li>
-                    <li><b>网易云和 QQ 音乐更快了</b>：给它俩开了单独的快速通道，切歌后不到 1 秒就能切好采样率</li>
-                    <li><b>修了个小 bug</b>：网易云 48kHz 的歌之前会认成 44.1kHz，现在修好了</li>
+                    <li>新增检查脚本是否能信任的机制</li>
+                    <li>增加日志检测，保证只跑在音乐软件上</li>
+                    <li>新增支持QQ音乐</li>
                 </ul>
+                <p><b>网易云和 QQ 音乐切换更快</b></p>
+                <p>QQ音乐与网易云音乐增加独立监听机制，切换速度得到显著提升</p>
                 <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.1.0-beta">查看完整说明</a></p>
             ]]></description>
             <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.1.0-beta</sparkle:releaseNotesLink>
