@@ -101,6 +101,10 @@ class OutputDevices: ObservableObject {
     private var silentProbeApps: Set<String> = []
     private var probeMissCounts: [String : Int] = [:]
     private static let probeMissesBeforeSkip = 2
+    private static let fastAudioQueueBundles: Set<String> = [
+        Defaults.neteaseMusicBundleIdentifier,
+        Defaults.qqMusicBundleIdentifier
+    ]
 
     /// Gate policy per rate source. The 3.5 s boundary window + 2.0 s
     /// stability confirmation exist because Apple Music reports a transient
@@ -356,6 +360,9 @@ class OutputDevices: ObservableObject {
     /// Maps a track genre to Apple Music's localized EQ preset name.
     /// Presets verified via `name of EQ presets` (zh-Hans system).
     /// Returns nil to leave the current EQ untouched.
+    /// Security: allowlist-only — genre is attacker-controlled (ID3 tag) and
+    /// must never be interpolated into AppleScript. Only hardcoded preset names
+    /// are returned; unknown/injected genres return nil.
     static func eqPreset(forGenre genre: String?) -> String? {
         guard let genre else { return nil }
         let g = genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -443,6 +450,11 @@ class OutputDevices: ObservableObject {
     /// activated for the menu action to take effect; the previously active
     /// app is restored afterwards so focus returns quickly.
     func setAppleMusicEQ(_ preset: String) {
+        let allowedPresets: Set<String> = ["摇滚乐","流行乐","古典","爵士乐","嘻哈音乐","电子乐","舞曲","原声","R&B","钢琴曲","诵读音乐","拉丁音乐","平缓"]
+        guard allowedPresets.contains(preset) else {
+            Logger.switching.error("[EQ] rejected non-allowlisted preset \(preset, privacy: .public)")
+            return
+        }
         Logger.switching.info("[EQ] accessibility trusted: \(AXIsProcessTrusted(), privacy: .public)")
         let previousFrontmost = NSWorkspace.shared.frontmostApplication
         let script = """
@@ -551,6 +563,19 @@ class OutputDevices: ObservableObject {
         // parsing entirely and works without admin privileges. Apps that do
         // not report it fall through to the log-based chain below.
         //
+        // Fast-path for NetEase / QQ: independent AudioQueue chain.
+        // These apps never report NowPlaying sampleRate and do not need the
+        // Apple Music priority dance (which costs AppleScript + 1.0s probe timeout).
+        // Bypassing both cuts ~1.0-1.5s off every switch, while AM keeps its
+        // full 3.5s/2.0s Atmos gate unchanged.
+        if let bundleID = Self.resolveBundleIdentifier(track: currentTrack),
+           Self.fastAudioQueueBundles.contains(bundleID) {
+            Logger.switching.info("[FastPath] \(bundleID, privacy: .public) -> direct AudioQueue chain")
+            self.processQueue.async {
+                self.runLogChain(expectedTrack: expectedTrack, recursion: recursion)
+            }
+            return
+        }
         // Apps already known to report nothing are skipped entirely: a miss
         // costs the probe's 1.0 s timeout wait, and the gate re-evaluates
         // every 0.5 s, so that wait is paid on every single re-evaluation.
@@ -981,8 +1006,56 @@ class OutputDevices: ObservableObject {
         }
     }
 
+    /// Validates that a user-script path is safe to execute.
+    /// Checks: exists, is file (not directory), is executable, is not a symlink,
+    /// and is owned by the current user. Rejects world-writable symlink escapes
+    /// and `defaults write` injected paths from other apps.
+    static func isValidUserScript(at path: String) -> Bool {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: path, isDirectory: &isDir), !isDir.boolValue else {
+            Logger.switching.error("[Script] rejected: not found or is directory \(path, privacy: .public)")
+            return false
+        }
+        guard fm.isExecutableFile(atPath: path) else {
+            Logger.switching.error("[Script] rejected: not executable \(path, privacy: .public)")
+            return false
+        }
+        let url = URL(fileURLWithPath: path)
+        if let rv = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]), rv.isSymbolicLink == true {
+            Logger.switching.error("[Script] rejected: symlink \(path, privacy: .public)")
+            return false
+        }
+        let resolved = url.resolvingSymlinksInPath().path
+        let standardized = url.standardized.path
+        if resolved != standardized {
+            Logger.switching.error("[Script] rejected: intermediate symlink \(path, privacy: .public) -> \(resolved, privacy: .public)")
+            return false
+        }
+        guard let attrs = try? fm.attributesOfItem(atPath: path),
+              let owner = attrs[.ownerAccountName] as? String else {
+            Logger.switching.error("[Script] rejected: cannot determine owner \(path, privacy: .public)")
+            return false
+        }
+        let currentUser = NSUserName()
+        guard owner == currentUser else {
+            Logger.switching.error("[Script] rejected: owner \(owner, privacy: .public) != \(currentUser, privacy: .public)")
+            return false
+        }
+        return true
+    }
+
     func runUserScript(_ sampleRate: Float64, bitDepth: Int?) {
-        guard let scriptPath = Defaults.shared.shellScriptPath else { return }
+        let livePath = UserDefaults.standard.string(forKey: "KeyShellScriptPath")
+        guard let scriptPath = livePath ?? Defaults.shared.shellScriptPath else { return }
+        guard Self.isValidUserScript(at: scriptPath) else {
+            Logger.switching.error("[Script] validation failed, not executing \(scriptPath, privacy: .public)")
+            if livePath != nil {
+                UserDefaults.standard.removeObject(forKey: "KeyShellScriptPath")
+                DispatchQueue.main.async { Defaults.shared.shellScriptPath = nil }
+            }
+            return
+        }
         let argumentSampleRate = String(Int(sampleRate))
         var arguments = [argumentSampleRate]
         

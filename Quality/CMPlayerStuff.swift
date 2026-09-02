@@ -106,6 +106,18 @@ class CMPlayerParser {
                     bitDepth = Int(depthPart)
                 }
             }
+            // NetEase/QQ via AudioConverter: "from  2 ch,  48000 Hz, lpcm (0x...) 24-bit ... to ..."
+            // New output may be missing or reflect hardware rate, so also extract source rate from the
+            // converter's "from ... Hz, lpcm" line. Prefer lpcm source rate when present (decoded source).
+            if rawMessage.contains("AudioConverter") && rawMessage.contains("from ") && rawMessage.contains("lpcm") {
+                if let sub = rawMessage.firstSubstring(between: "from ", and: " Hz,") {
+                    let str = String(sub).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let ratePart = str.split(separator: ",").last?.trimmingCharacters(in: .whitespaces),
+                       let r = Double(ratePart), r > 0 {
+                        sampleRate = r
+                    }
+                }
+            }
 
             if let sr = sampleRate, sr > 0 {
                 let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth ?? 16, date: date)
