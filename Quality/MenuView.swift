@@ -169,9 +169,31 @@ struct MenuView: View {
                     panel.message = NSLocalizedString("Select a script that should be invoked when sample rate changes.", comment: "Script selection panel message")
 
                     panel.begin { response in
-                        let path = panel.url?.path
+                        guard response == .OK, let path = panel.url?.path else { return }
+                        let isValid: Bool = {
+                            let fm = FileManager.default
+                            var isDir: ObjCBool = false
+                            guard fm.fileExists(atPath: path, isDirectory: &isDir), !isDir.boolValue else { return false }
+                            guard fm.isExecutableFile(atPath: path) else { return false }
+                            let url = URL(fileURLWithPath: path)
+                            if let rv = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]), rv.isSymbolicLink == true { return false }
+                            let resolved = url.resolvingSymlinksInPath().path
+                            let standardized = url.standardized.path
+                            if resolved != standardized { return false }
+                            guard let attrs = try? fm.attributesOfItem(atPath: path),
+                                  let owner = attrs[.ownerAccountName] as? String else { return false }
+                            return owner == NSUserName()
+                        }()
                         DispatchQueue.main.async { [weak defaults] in
-                            defaults?.shellScriptPath = path
+                            if isValid {
+                                defaults?.shellScriptPath = path
+                            } else {
+                                let alert = NSAlert()
+                                alert.messageText = NSLocalizedString("Invalid Script", comment: "Alert title for invalid script")
+                                alert.informativeText = NSLocalizedString("The selected file is not executable, is a symlink, or is not owned by you. Please select a valid executable script.", comment: "Alert message for invalid script")
+                                alert.alertStyle = .warning
+                                alert.runModal()
+                            }
                         }
                     }
                 } label: {
