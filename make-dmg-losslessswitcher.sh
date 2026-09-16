@@ -8,8 +8,8 @@ set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="RateSync"
-VERSION="3.2.2"
-BUILD="32"
+VERSION="3.2.3"
+BUILD="33"
 OUT="${1:-$PROJ_DIR/RateSync-$VERSION.dmg}"
 
 BUILD_STAGING="$(mktemp -d /tmp/lossless-dragdrop-build-XXXXXX)"

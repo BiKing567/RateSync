@@ -6,6 +6,25 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.3 (构建 33)</title>
+            <pubDate>Wed, 16 Sep 2026 05:02:05 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.3 新增多播放器接管规则，支持自定义播放器优先级和临时锁定来源。</p>
+                <p>RateSync 3.2.3 adds multi-player takeover rules with custom player priorities and temporary source locking.</p>
+                <h4>新增 / New</h4>
+                <ul>
+                    <li>支持设置播放器优先级，多个播放器同时活跃时按优先级接管音频格式切换。</li>
+                    <li>支持临时锁定音频来源，避免其他播放器抢占。</li>
+                    <li>优先级和临时锁定入口放在实验性功能中。</li>
+                    <li>Set player priorities and temporarily lock the active source to prevent competing players from taking over.</li>
+                </ul>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.3">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.3</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.3/RateSync-3.2.3.dmg" sparkle:version="33" sparkle:shortVersionString="3.2.3" sparkle:edSignature="SBZvib7g7/8cCDdIHdzYSVRPWToZ/+XJg56tf/zoQosDODA2DdQYIiQtfHC7i5tHEXZOMrRxDYU0tMxPH6VgAQ==" length="2831510" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.2 (构建 32)</title>
             <pubDate>Thu, 10 Sep 2026 02:47:15 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
