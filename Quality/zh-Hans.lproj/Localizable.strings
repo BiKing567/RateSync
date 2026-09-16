@@ -20,6 +20,21 @@
 "NetEase Music" = "网易云音乐";
 "QQ Music" = "QQ音乐";
 
+/* 多播放器接管 */
+"Player Priority" = "播放器优先级";
+"Temporary Source Lock" = "临时锁定来源";
+"Priority applies when All Apps is selected." = "选择“全部 App”时生效";
+"Move Up" = "上移";
+"Move Down" = "下移";
+"15 Minutes" = "15 分钟";
+"30 Minutes" = "30 分钟";
+"1 Hour" = "1 小时";
+"Until Unlocked" = "直到解除锁定";
+"Unlock Source" = "解除来源锁定";
+"Locked: %@" = "已锁定：%@";
+"Locked: %@ — until %@" = "已锁定：%@ — 截止 %@";
+"Locked: %@ — until unlocked" = "已锁定：%@ — 直到解除锁定";
+
 /* About menu */
 "About" = "关于";
 "Version - %@" = "版本 - %@";

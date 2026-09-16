@@ -162,6 +162,117 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(profile?.fallbackSampleRate, 44_100)
     }
 
+    func testPlayerPriorityNormalizationKeepsCustomOrderAndAddsMissingPlayers() {
+        let priority = PlayerProfile.normalizedPriority([
+            PlayerProfile.qqMusic.bundleIdentifier,
+            PlayerProfile.qqMusic.bundleIdentifier,
+            PlayerProfile.appleMusic.bundleIdentifier,
+            "com.example.unknown-player"
+        ])
+
+        XCTAssertEqual(
+            priority,
+            [
+                PlayerProfile.qqMusic.bundleIdentifier,
+                PlayerProfile.appleMusic.bundleIdentifier,
+                PlayerProfile.spotify.bundleIdentifier,
+                PlayerProfile.neteaseMusic.bundleIdentifier
+            ]
+        )
+    }
+
+    func testHigherPriorityPlayerCanTakeOverImmediately() {
+        let now = Date(timeIntervalSince1970: 100)
+
+        XCTAssertTrue(
+            PlayerTakeoverPolicy.shouldAccept(
+                candidateBundleIdentifier: PlayerProfile.appleMusic.bundleIdentifier,
+                currentBundleIdentifier: PlayerProfile.neteaseMusic.bundleIdentifier,
+                currentLastSeenAt: now,
+                now: now.addingTimeInterval(1),
+                priority: PlayerProfile.defaultPriorityBundleIdentifiers
+            )
+        )
+    }
+
+    func testLowerPriorityPlayerWaitsWhileCurrentSourceIsFresh() {
+        let now = Date(timeIntervalSince1970: 100)
+
+        XCTAssertFalse(
+            PlayerTakeoverPolicy.shouldAccept(
+                candidateBundleIdentifier: PlayerProfile.neteaseMusic.bundleIdentifier,
+                currentBundleIdentifier: PlayerProfile.appleMusic.bundleIdentifier,
+                currentLastSeenAt: now,
+                now: now.addingTimeInterval(1),
+                priority: PlayerProfile.defaultPriorityBundleIdentifiers
+            )
+        )
+    }
+
+    func testLowerPriorityPlayerCanTakeOverAfterCurrentSourceGoesQuiet() {
+        let now = Date(timeIntervalSince1970: 100)
+
+        XCTAssertTrue(
+            PlayerTakeoverPolicy.shouldAccept(
+                candidateBundleIdentifier: PlayerProfile.neteaseMusic.bundleIdentifier,
+                currentBundleIdentifier: PlayerProfile.appleMusic.bundleIdentifier,
+                currentLastSeenAt: now,
+                now: now.addingTimeInterval(PlayerTakeoverPolicy.defaultActivityWindow + 1),
+                priority: PlayerProfile.defaultPriorityBundleIdentifiers
+            )
+        )
+    }
+
+    func testActiveLowerPriorityPlayerStillWaitsWhileCurrentSourceIsFresh() {
+        let now = Date(timeIntervalSince1970: 100)
+
+        XCTAssertFalse(
+            PlayerTakeoverPolicy.shouldAcceptAfterActivePlayerCheck(
+                activePlayerRelation: .candidate,
+                candidateBundleIdentifier: PlayerProfile.neteaseMusic.bundleIdentifier,
+                currentBundleIdentifier: PlayerProfile.appleMusic.bundleIdentifier,
+                currentLastSeenAt: now,
+                now: now.addingTimeInterval(1),
+                priority: PlayerProfile.defaultPriorityBundleIdentifiers
+            ),
+            "an active lower-priority candidate must not bypass the freshness window"
+        )
+    }
+
+    func testMismatchedMonitoredSourceIsIgnored() {
+        XCTAssertEqual(
+            MonitoredSourceDecision.decide(
+                monitoredBundleIdentifier: PlayerProfile.appleMusic.bundleIdentifier,
+                incomingBundleIdentifier: PlayerProfile.neteaseMusic.bundleIdentifier
+            ),
+            .ignore,
+            "an event from outside the monitored source must not clear the selected source"
+        )
+    }
+
+    func testStaleReportedSourceUsesResolvedPreferredSource() {
+        XCTAssertEqual(
+            SourceIdentityPolicy.effectiveBundleIdentifier(
+                reportedBundleIdentifier: PlayerProfile.neteaseMusic.bundleIdentifier,
+                resolvedBundleIdentifier: PlayerProfile.appleMusic.bundleIdentifier,
+                preferredBundleIdentifier: PlayerProfile.appleMusic.bundleIdentifier
+            ),
+            PlayerProfile.appleMusic.bundleIdentifier,
+            "a stale MediaRemote source id must not hide the monitored process identity"
+        )
+    }
+
+    func testTemporaryLockBecomesTheEffectiveMonitorSelection() {
+        XCTAssertEqual(
+            MenuSelectionState.effectiveSelectedIdentifier(
+                selectedIdentifier: PlayerProfile.appleMusic.bundleIdentifier,
+                temporaryLockIdentifier: PlayerProfile.neteaseMusic.bundleIdentifier
+            ),
+            PlayerProfile.neteaseMusic.bundleIdentifier,
+            "the temporary lock must be the source shown as effective in the menu"
+        )
+    }
+
     func testResolvesBundleIdentifierForKnownProcessName() {
         // Given
         let processName = "Music"
@@ -177,6 +288,36 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(
             PlayerProfile.monitoringSources.map(\.localizationKey),
             ["Apple Music", "Spotify", "NetEase Music", "QQ Music"]
+        )
+    }
+
+    func testMenuSelectionStateMarksMatchingIdentifierAsSelected() {
+        XCTAssertTrue(
+            MenuSelectionState.isSelected(
+                selectedIdentifier: "device-a",
+                optionIdentifier: "device-a"
+            )
+        )
+        XCTAssertFalse(
+            MenuSelectionState.isSelected(
+                selectedIdentifier: "device-a",
+                optionIdentifier: "device-b"
+            )
+        )
+    }
+
+    func testMenuSelectionStateMarksDefaultOptionOnlyWhenSelectionIsNil() {
+        XCTAssertTrue(
+            MenuSelectionState.isSelected(
+                selectedIdentifier: nil,
+                optionIdentifier: nil
+            )
+        )
+        XCTAssertFalse(
+            MenuSelectionState.isSelected(
+                selectedIdentifier: "device-a",
+                optionIdentifier: nil
+            )
         )
     }
 
@@ -394,6 +535,14 @@ final class SwitchingSupportTests: XCTestCase {
                 live: live
             ),
             live
+        )
+    }
+
+    func testPlayerPriorityMenuTitleIncludesPlayerNameAfterOrderNumber() {
+        XCTAssertEqual(
+            MenuLabelPolicy.playerPriorityTitle(index: 1, localizedName: "Apple Music"),
+            "1. Apple Music",
+            "Player priority rows must show the player name instead of only the order number."
         )
     }
 }

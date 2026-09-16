@@ -52,13 +52,146 @@ enum RateSwitchingPolicy {
     }
 }
 
+enum PlayerTakeoverPolicy {
+    static let defaultActivityWindow: TimeInterval = 15
+
+    enum ActivePlayerRelation {
+        case candidate
+        case current
+        case unknown
+    }
+
+    static func priorityIndex(
+        for bundleIdentifier: String?,
+        priority: [String]
+    ) -> Int {
+        guard let bundleIdentifier,
+              let index = priority.firstIndex(of: bundleIdentifier) else {
+            return priority.count
+        }
+        return index
+    }
+
+    /// Determines whether a newly observed source may replace the current
+    /// source when the user selected automatic monitoring. A higher-priority
+    /// source may take over immediately; a lower-priority source must wait
+    /// until the current source has gone quiet long enough.
+    static func shouldAccept(
+        candidateBundleIdentifier: String?,
+        currentBundleIdentifier: String?,
+        currentLastSeenAt: Date?,
+        now: Date,
+        priority: [String],
+        activityWindow: TimeInterval = defaultActivityWindow
+    ) -> Bool {
+        guard candidateBundleIdentifier != currentBundleIdentifier else { return true }
+        guard currentBundleIdentifier != nil else { return true }
+
+        let candidateIndex = priorityIndex(for: candidateBundleIdentifier, priority: priority)
+        let currentIndex = priorityIndex(for: currentBundleIdentifier, priority: priority)
+        if candidateIndex < currentIndex {
+            return true
+        }
+
+        guard let currentLastSeenAt else { return true }
+        return now.timeIntervalSince(currentLastSeenAt) > activityWindow
+    }
+
+    static func shouldAcceptAfterActivePlayerCheck(
+        activePlayerRelation: ActivePlayerRelation,
+        candidateBundleIdentifier: String?,
+        currentBundleIdentifier: String?,
+        currentLastSeenAt: Date?,
+        now: Date,
+        priority: [String],
+        activityWindow: TimeInterval = defaultActivityWindow
+    ) -> Bool {
+        switch activePlayerRelation {
+        case .candidate:
+            return shouldAccept(
+                candidateBundleIdentifier: candidateBundleIdentifier,
+                currentBundleIdentifier: currentBundleIdentifier,
+                currentLastSeenAt: currentLastSeenAt,
+                now: now,
+                priority: priority,
+                activityWindow: activityWindow
+            )
+        case .current:
+            return false
+        case .unknown:
+            return shouldAccept(
+                candidateBundleIdentifier: candidateBundleIdentifier,
+                currentBundleIdentifier: currentBundleIdentifier,
+                currentLastSeenAt: currentLastSeenAt,
+                now: now,
+                priority: priority,
+                activityWindow: activityWindow
+            )
+        }
+    }
+}
+
+enum MenuSelectionState {
+    static func effectiveSelectedIdentifier(
+        selectedIdentifier: String?,
+        temporaryLockIdentifier: String?
+    ) -> String? {
+        temporaryLockIdentifier ?? selectedIdentifier
+    }
+
+    static func isSelected(
+        selectedIdentifier: String?,
+        optionIdentifier: String?
+    ) -> Bool {
+        selectedIdentifier == optionIdentifier
+    }
+}
+
+enum MonitoredSourceDecision: Equatable {
+    case deliver
+    case ignore
+
+    static func decide(
+        monitoredBundleIdentifier: String?,
+        incomingBundleIdentifier: String?
+    ) -> Self {
+        guard let monitoredBundleIdentifier else { return .deliver }
+        return incomingBundleIdentifier == monitoredBundleIdentifier ? .deliver : .ignore
+    }
+}
+
+enum SourceIdentityPolicy {
+    static func effectiveBundleIdentifier(
+        reportedBundleIdentifier: String?,
+        resolvedBundleIdentifier: String?,
+        preferredBundleIdentifier: String?
+    ) -> String? {
+        if let preferredBundleIdentifier,
+           reportedBundleIdentifier != preferredBundleIdentifier,
+           resolvedBundleIdentifier == preferredBundleIdentifier {
+            return resolvedBundleIdentifier
+        }
+        return reportedBundleIdentifier ?? resolvedBundleIdentifier
+    }
+}
+
+enum MenuLabelPolicy {
+    static func playerPriorityTitle(index: Int, localizedName: String) -> String {
+        "\(index). \(localizedName)"
+    }
+}
+
 enum AppleMusicPriorityPolicy {
     static func shouldPrioritize(
         monitoredBundleIdentifier: String?,
-        sourceBundleIdentifier: String?
+        sourceBundleIdentifier: String?,
+        priority: [String] = PlayerProfile.defaultPriorityBundleIdentifiers,
+        temporarySourceLockBundleIdentifier: String? = nil
     ) -> Bool {
         monitoredBundleIdentifier == nil
+            && temporarySourceLockBundleIdentifier == nil
             && sourceBundleIdentifier != PlayerProfile.appleMusic.bundleIdentifier
+            && priority.first == PlayerProfile.appleMusic.bundleIdentifier
     }
 }
 

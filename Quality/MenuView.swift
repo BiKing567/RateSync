@@ -24,42 +24,156 @@ struct MenuView: View {
                 Text(defaults.statusBarItemTitle)
             }
 
-            Button {
-                defaults.userPreferBitDepthDetection.toggle()
+            Toggle(isOn: $defaults.userPreferBitDepthDetection) {
+                Text("Bit Depth Switching", comment: "Menu toggle: switch bit depth along with sample rate")
+            }
+            .onChange(of: defaults.userPreferBitDepthDetection) { _, _ in
                 outputDevices.bitDepthPreferenceDidChange()
-            } label: {
-                HStack {
-                    Text("Bit Depth Switching", comment: "Menu toggle: switch bit depth along with sample rate")
-                    if defaults.userPreferBitDepthDetection {
-                        Image(systemName: "checkmark")
-                    }
-                }
             }
 
-            Button {
-                defaults.userPreferSampleRateMultiples.toggle()
-            } label: {
-                HStack {
-                    Text("Prefer Closest Sample Rate Multiple", comment: "Menu toggle: fall back to a sample rate multiple the device supports")
-                    if defaults.userPreferSampleRateMultiples {
-                        Image(systemName: "checkmark")
-                    }
-                }
+            Toggle(isOn: $defaults.userPreferSampleRateMultiples) {
+                Text("Prefer Closest Sample Rate Multiple", comment: "Menu toggle: fall back to a sample rate multiple the device supports")
             }
 
             Menu {
-                Button {
-                    defaults.autoEQEnabled.toggle()
+                Toggle(isOn: $defaults.autoEQEnabled) {
+                    Text("Auto EQ by Genre (Apple Music)", comment: "Menu toggle: auto-switch Apple Music EQ preset by genre")
+                }
+                .onChange(of: defaults.autoEQEnabled) { _, isEnabled in
                     // Apply immediately to the current track, without waiting
                     // for the next track change.
-                    if defaults.autoEQEnabled {
+                    if isEnabled {
                         outputDevices.applyAppleMusicEQIfNeeded()
+                    }
+                }
+
+                Menu {
+                    Text("Priority applies when All Apps is selected.", comment: "Explanation for automatic multi-player takeover")
+
+                    ForEach(Array(defaults.playerPriorityBundleIdentifiers.enumerated()), id: \.element) { index, bundleIdentifier in
+                        if let profile = PlayerProfile.profile(for: bundleIdentifier) {
+                            let localizedProfileName = NSLocalizedString(
+                                profile.localizationKey,
+                                comment: "Player name in priority list"
+                            )
+
+                            Menu {
+                                Button {
+                                    defaults.movePlayerUp(bundleIdentifier)
+                                    outputDevices.reevaluateNowPlaying()
+                                } label: {
+                                    Text("Move Up", comment: "Player priority action")
+                                }
+                                .disabled(index == 0)
+
+                                Button {
+                                    defaults.movePlayerDown(bundleIdentifier)
+                                    outputDevices.reevaluateNowPlaying()
+                                } label: {
+                                    Text("Move Down", comment: "Player priority action")
+                                }
+                                .disabled(index == defaults.playerPriorityBundleIdentifiers.count - 1)
+                            } label: {
+                                Text(
+                                    MenuLabelPolicy.playerPriorityTitle(
+                                        index: index + 1,
+                                        localizedName: localizedProfileName
+                                    )
+                                )
+                            }
+                        }
+                    }
+                } label: {
+                    Text("Player Priority", comment: "Submenu title for ordering automatic player takeover")
+                }
+                .disabled(defaults.monitoredBundleIdentifier != nil)
+
+                Menu {
+                    ForEach(PlayerProfile.monitoringSources) { profile in
+                        Menu {
+                            Button {
+                                defaults.lockSource(profile.bundleIdentifier, duration: 15 * 60)
+                                outputDevices.reevaluateNowPlaying()
+                            } label: {
+                                Text("15 Minutes", comment: "Temporary source lock duration")
+                            }
+
+                            Button {
+                                defaults.lockSource(profile.bundleIdentifier, duration: 30 * 60)
+                                outputDevices.reevaluateNowPlaying()
+                            } label: {
+                                Text("30 Minutes", comment: "Temporary source lock duration")
+                            }
+
+                            Button {
+                                defaults.lockSource(profile.bundleIdentifier, duration: 60 * 60)
+                                outputDevices.reevaluateNowPlaying()
+                            } label: {
+                                Text("1 Hour", comment: "Temporary source lock duration")
+                            }
+
+                            Button {
+                                defaults.lockSource(profile.bundleIdentifier, duration: nil)
+                                outputDevices.reevaluateNowPlaying()
+                            } label: {
+                                Text("Until Unlocked", comment: "Temporary source lock duration")
+                            }
+                        } label: {
+                            HStack {
+                                Image(
+                                    systemName: defaults.activeTemporarySourceLock?.bundleIdentifier == profile.bundleIdentifier
+                                        ? "checkmark"
+                                        : "circle"
+                                )
+                                Text(LocalizedStringKey(profile.localizationKey))
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Button {
+                        defaults.clearTemporarySourceLock()
+                        outputDevices.reevaluateNowPlaying()
+                    } label: {
+                        Text("Unlock Source", comment: "Clear the temporary source lock")
+                    }
+                    .disabled(defaults.activeTemporarySourceLock == nil)
+
+                    if let lock = defaults.activeTemporarySourceLock,
+                       let profile = PlayerProfile.profile(for: lock.bundleIdentifier) {
+                        let localizedProfileName = NSLocalizedString(
+                            profile.localizationKey,
+                            comment: "Player name in source lock status"
+                        )
+                        if let expiresAt = lock.expiresAt {
+                            Text(
+                                String(
+                                    format: NSLocalizedString(
+                                        "Locked: %@ — until %@",
+                                        comment: "Current temporary source lock status with expiry"
+                                    ),
+                                    localizedProfileName,
+                                    expiresAt.formatted(date: .omitted, time: .shortened)
+                                )
+                            )
+                        } else {
+                            Text(
+                                String(
+                                    format: NSLocalizedString(
+                                        "Locked: %@ — until unlocked",
+                                        comment: "Current indefinite temporary source lock status"
+                                    ),
+                                    localizedProfileName
+                                )
+                            )
+                        }
                     }
                 } label: {
                     HStack {
-                        Text("Auto EQ by Genre (Apple Music)", comment: "Menu toggle: auto-switch Apple Music EQ preset by genre")
-                        if defaults.autoEQEnabled {
-                            Image(systemName: "checkmark")
+                        Text("Temporary Source Lock", comment: "Submenu title for temporarily locking one player")
+                        if defaults.activeTemporarySourceLock != nil {
+                            Image(systemName: "lock.fill")
                         }
                     }
                 }
@@ -69,50 +183,27 @@ struct MenuView: View {
 
             Menu {
                 ForEach(PlayerProfile.monitoringSources) { profile in
-                    Button {
-                        defaults.monitoredBundleIdentifier = profile.bundleIdentifier
-                        outputDevices.reevaluateNowPlaying()
-                    } label: {
-                        if defaults.monitoredBundleIdentifier == profile.bundleIdentifier {
-                            Image(systemName: "checkmark")
-                        }
+                    Toggle(isOn: monitoredSourceBinding(for: profile.bundleIdentifier)) {
                         Text(LocalizedStringKey(profile.localizationKey))
                     }
                 }
 
-                Button {
-                    defaults.monitoredBundleIdentifier = nil
-                    outputDevices.reevaluateNowPlaying()
-                } label: {
-                    if defaults.monitoredBundleIdentifier == nil {
-                        Image(systemName: "checkmark")
-                    }
+                Toggle(isOn: monitoredSourceBinding(for: nil)) {
                     Text("All Apps", comment: "Monitoring source option: monitor every app")
                 }
             } label: {
                 Text("Monitor Source", comment: "Submenu title for choosing which app to monitor")
             }
+            .disabled(defaults.activeTemporarySourceLock != nil)
 
             Menu {
-                Button {
-                    outputDevices.selectedOutputDevice = nil
-                    defaults.selectedDeviceUID = nil
-                } label: {
-                    if outputDevices.selectedOutputDevice == nil {
-                        Image(systemName: "checkmark")
-                    }
+                Toggle(isOn: selectedDeviceBinding(for: nil)) {
                     Text("Default Device", comment: "Device selection option: use the system default output device")
                 }
 
                 ForEach(outputDevices.outputDevices, id: \.uid) { device in
-                    Button {
-                        outputDevices.selectedOutputDevice = device
-                        defaults.selectedDeviceUID = device.uid
-                    } label: {
+                    Toggle(isOn: selectedDeviceBinding(for: device.uid)) {
                         Text(device.name)
-                        if outputDevices.selectedOutputDevice?.uid == device.uid {
-                            Image(systemName: "checkmark")
-                        }
                     }
                 }
             } label: {
@@ -177,5 +268,55 @@ struct MenuView: View {
                 Text("Quit RateSync", comment: "Menu item: quit the app")
             }
         }
+    }
+
+    private func monitoredSourceBinding(for bundleIdentifier: String?) -> Binding<Bool> {
+        Binding(
+            get: {
+                MenuSelectionState.isSelected(
+                    selectedIdentifier: MenuSelectionState.effectiveSelectedIdentifier(
+                        selectedIdentifier: defaults.monitoredBundleIdentifier,
+                        temporaryLockIdentifier: defaults.activeTemporarySourceLock?.bundleIdentifier
+                    ),
+                    optionIdentifier: bundleIdentifier
+                )
+            },
+            set: { isSelected in
+                guard defaults.activeTemporarySourceLock == nil else { return }
+                guard isSelected || MenuSelectionState.isSelected(
+                    selectedIdentifier: defaults.monitoredBundleIdentifier,
+                    optionIdentifier: bundleIdentifier
+                ) else { return }
+                defaults.monitoredBundleIdentifier = isSelected ? bundleIdentifier : nil
+                outputDevices.reevaluateNowPlaying()
+            }
+        )
+    }
+
+    private func selectedDeviceBinding(for uid: String?) -> Binding<Bool> {
+        Binding(
+            get: {
+                MenuSelectionState.isSelected(
+                    selectedIdentifier: outputDevices.selectedOutputDevice?.uid,
+                    optionIdentifier: uid
+                )
+            },
+            set: { isSelected in
+                guard isSelected || MenuSelectionState.isSelected(
+                    selectedIdentifier: outputDevices.selectedOutputDevice?.uid,
+                    optionIdentifier: uid
+                ) else { return }
+
+                guard isSelected, let uid else {
+                    outputDevices.selectedOutputDevice = nil
+                    defaults.selectedDeviceUID = nil
+                    return
+                }
+
+                guard let device = outputDevices.outputDevices.first(where: { $0.uid == uid }) else { return }
+                outputDevices.selectedOutputDevice = device
+                defaults.selectedDeviceUID = uid
+            }
+        )
     }
 }

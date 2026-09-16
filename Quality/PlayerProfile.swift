@@ -47,6 +47,27 @@ struct PlayerProfile: Equatable, Identifiable {
 
     static let monitoringSources = [appleMusic, spotify, neteaseMusic, qqMusic]
 
+    /// Default takeover order used when the user selects "All Apps".
+    /// Keeping Apple Music first preserves the behaviour users already had
+    /// before multi-player arbitration was introduced.
+    static let defaultPriorityBundleIdentifiers = monitoringSources.map(\.bundleIdentifier)
+
+    static func normalizedPriority(_ bundleIdentifiers: [String]) -> [String] {
+        var result: [String] = []
+        for identifier in bundleIdentifiers {
+            guard monitoringSources.contains(where: { $0.bundleIdentifier == identifier }),
+                  !result.contains(identifier) else {
+                continue
+            }
+            result.append(identifier)
+        }
+
+        for identifier in defaultPriorityBundleIdentifiers where !result.contains(identifier) {
+            result.append(identifier)
+        }
+        return result
+    }
+
     static func profile(for bundleIdentifier: String?) -> PlayerProfile? {
         monitoringSources.first { $0.bundleIdentifier == bundleIdentifier }
     }

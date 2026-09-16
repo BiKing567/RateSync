@@ -40,6 +40,27 @@ enum MediaRemoteSampleRateProbe {
         }
         return unsafeBitCast(sym, to: (@convention(c) (DispatchQueue, @escaping MRGetNowPlayingApplicationPIDCompletion) -> Void).self)
     }()
+
+    /// Returns the process that MediaRemote currently considers the active
+    /// Now Playing source. This is deliberately a lightweight query used
+    /// only when two sources compete for control.
+    static func fetchActivePlayerPID(completion: @escaping (pid_t?) -> Void) {
+        guard let getNowPlayingApplicationPID else {
+            completion(nil)
+            return
+        }
+
+        let completeOnce = OneShotCompletion<pid_t?> {
+            completion($0)
+        }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) {
+            completeOnce.complete(nil)
+        }
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        getNowPlayingApplicationPID(queue) { pid in
+            completeOnce.complete(pid > 0 ? pid : nil)
+        }
+    }
     
     // Private framework headers are not part of the SDK; the keys are
     // plain string constants known from the private MediaRemote API.

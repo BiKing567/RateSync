@@ -7,6 +7,16 @@
 
 import Foundation
 
+struct PlayerSourceLock: Equatable {
+    let bundleIdentifier: String
+    let expiresAt: Date?
+
+    var isActive: Bool {
+        guard let expiresAt else { return true }
+        return expiresAt > Date()
+    }
+}
+
 class Defaults: ObservableObject {
     static let shared = Defaults()
     private let kUserPreferIconStatusBarItem = "com.biking.RateSync-Key-UserPreferIconStatusBarItem"
@@ -15,6 +25,9 @@ class Defaults: ObservableObject {
     private let kShellScriptPath = "KeyShellScriptPath"
     private let kUserPreferSampleRateMultiples = "PreferSampleRateMultiples"
     private let kMonitoredBundleIdentifier = "com.biking.RateSync-Key-MonitoredBundleIdentifier"
+    private let kPlayerPriorityBundleIdentifiers = "com.biking.RateSync-Key-PlayerPriorityBundleIdentifiers"
+    private let kTemporarySourceLockBundleIdentifier = "com.biking.RateSync-Key-TemporarySourceLockBundleIdentifier"
+    private let kTemporarySourceLockExpiresAt = "com.biking.RateSync-Key-TemporarySourceLockExpiresAt"
     private let kAutoEQEnabled = "com.biking.RateSync-Key-AutoEQEnabled"
     
     private init() {
@@ -37,6 +50,24 @@ class Defaults: ObservableObject {
         self.userPreferBitDepthDetection = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDetection)
         self.userPreferSampleRateMultiples = UserDefaults.standard.bool(forKey: kUserPreferSampleRateMultiples)
         self.monitoredBundleIdentifier = UserDefaults.standard.string(forKey: kMonitoredBundleIdentifier)
+        let storedPriority = UserDefaults.standard.array(forKey: kPlayerPriorityBundleIdentifiers) as? [String] ?? []
+        self.playerPriorityBundleIdentifiers = PlayerProfile.normalizedPriority(storedPriority)
+        let storedLockBundleIdentifier = UserDefaults.standard.string(forKey: kTemporarySourceLockBundleIdentifier)
+        let storedLockExpiresAt = UserDefaults.standard.object(forKey: kTemporarySourceLockExpiresAt) as? Date
+        if storedLockBundleIdentifier != nil,
+           let storedLockExpiresAt,
+           storedLockExpiresAt <= Date() {
+            UserDefaults.standard.removeObject(forKey: kTemporarySourceLockBundleIdentifier)
+            UserDefaults.standard.removeObject(forKey: kTemporarySourceLockExpiresAt)
+            self.temporarySourceLock = nil
+        } else if let storedLockBundleIdentifier {
+            self.temporarySourceLock = PlayerSourceLock(
+                bundleIdentifier: storedLockBundleIdentifier,
+                expiresAt: storedLockExpiresAt
+            )
+        } else {
+            self.temporarySourceLock = nil
+        }
         self.autoEQEnabled = UserDefaults.standard.bool(forKey: kAutoEQEnabled)
     }
     
@@ -83,6 +114,63 @@ class Defaults: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: kMonitoredBundleIdentifier)
             }
         }
+    }
+
+    /// Player order used when `monitoredBundleIdentifier` is nil.
+    /// The first player wins when multiple sources report activity.
+    @Published var playerPriorityBundleIdentifiers: [String] {
+        willSet {
+            UserDefaults.standard.set(
+                PlayerProfile.normalizedPriority(newValue),
+                forKey: kPlayerPriorityBundleIdentifiers
+            )
+        }
+    }
+
+    /// A temporary source lock overrides both the regular monitor source and
+    /// the automatic priority order until it expires or is cleared.
+    @Published var temporarySourceLock: PlayerSourceLock? {
+        willSet {
+            if let newValue {
+                UserDefaults.standard.set(newValue.bundleIdentifier, forKey: kTemporarySourceLockBundleIdentifier)
+                if let expiresAt = newValue.expiresAt {
+                    UserDefaults.standard.set(expiresAt, forKey: kTemporarySourceLockExpiresAt)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: kTemporarySourceLockExpiresAt)
+                }
+            } else {
+                UserDefaults.standard.removeObject(forKey: kTemporarySourceLockBundleIdentifier)
+                UserDefaults.standard.removeObject(forKey: kTemporarySourceLockExpiresAt)
+            }
+        }
+    }
+
+    var activeTemporarySourceLock: PlayerSourceLock? {
+        guard let temporarySourceLock, temporarySourceLock.isActive else { return nil }
+        return temporarySourceLock
+    }
+
+    func lockSource(_ bundleIdentifier: String, duration: TimeInterval?) {
+        let expiresAt = duration.map { Date().addingTimeInterval($0) }
+        temporarySourceLock = PlayerSourceLock(bundleIdentifier: bundleIdentifier, expiresAt: expiresAt)
+    }
+
+    func clearTemporarySourceLock() {
+        temporarySourceLock = nil
+    }
+
+    func movePlayerUp(_ bundleIdentifier: String) {
+        var priority = PlayerProfile.normalizedPriority(playerPriorityBundleIdentifiers)
+        guard let index = priority.firstIndex(of: bundleIdentifier), index > 0 else { return }
+        priority.swapAt(index, index - 1)
+        playerPriorityBundleIdentifiers = priority
+    }
+
+    func movePlayerDown(_ bundleIdentifier: String) {
+        var priority = PlayerProfile.normalizedPriority(playerPriorityBundleIdentifiers)
+        guard let index = priority.firstIndex(of: bundleIdentifier), index + 1 < priority.count else { return }
+        priority.swapAt(index, index + 1)
+        playerPriorityBundleIdentifiers = priority
     }
 
     /// Auto-switch Apple Music's built-in EQ preset to match the genre of

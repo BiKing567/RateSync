@@ -20,6 +20,21 @@
 "NetEase Music" = "NetEase Music";
 "QQ Music" = "QQ Music";
 
+/* Multi-player takeover */
+"Player Priority" = "Player Priority";
+"Temporary Source Lock" = "Temporary Source Lock";
+"Priority applies when All Apps is selected." = "Priority applies when All Apps is selected.";
+"Move Up" = "Move Up";
+"Move Down" = "Move Down";
+"15 Minutes" = "15 Minutes";
+"30 Minutes" = "30 Minutes";
+"1 Hour" = "1 Hour";
+"Until Unlocked" = "Until Unlocked";
+"Unlock Source" = "Unlock Source";
+"Locked: %@" = "Locked: %@";
+"Locked: %@ — until %@" = "Locked: %@ — until %@";
+"Locked: %@ — until unlocked" = "Locked: %@ — until unlocked";
+
 /* About menu */
 "About" = "About";
 "Version - %@" = "Version - %@";

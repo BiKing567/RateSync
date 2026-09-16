@@ -278,9 +278,11 @@ class OutputDevices: ObservableObject {
     }
 
     private var shouldPrioritizeAppleMusic: Bool {
-        AppleMusicPriorityPolicy.shouldPrioritize(
+        return AppleMusicPriorityPolicy.shouldPrioritize(
             monitoredBundleIdentifier: Defaults.shared.monitoredBundleIdentifier,
-            sourceBundleIdentifier: Self.resolveBundleIdentifier(track: currentTrack)
+            sourceBundleIdentifier: Self.resolveBundleIdentifier(track: currentTrack),
+            priority: Defaults.shared.playerPriorityBundleIdentifiers,
+            temporarySourceLockBundleIdentifier: Defaults.shared.activeTemporarySourceLock?.bundleIdentifier
         )
     }
 
@@ -890,10 +892,17 @@ class OutputDevices: ObservableObject {
     }
 
     private func reloadWidgetTimeline(reason: String, reloadAll: Bool = false) {
-        Logger.switching.info("[Widget] reload: \(reason, privacy: .public)")
-        WidgetCenter.shared.reloadTimelines(ofKind: RateSyncWidgetConfiguration.widgetKind)
-        if reloadAll {
-            WidgetCenter.shared.reloadAllTimelines()
+        let reload = {
+            Logger.switching.info("[Widget] reload: \(reason, privacy: .public)")
+            WidgetCenter.shared.reloadTimelines(ofKind: RateSyncWidgetConfiguration.widgetKind)
+            if reloadAll {
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+        }
+        if Thread.isMainThread {
+            reload()
+        } else {
+            DispatchQueue.main.async(execute: reload)
         }
     }
 
@@ -926,10 +935,10 @@ class OutputDevices: ObservableObject {
             self.processQueue.async {
                 let bundleID = trackInfo.payload.bundleIdentifier
                     ?? NSRunningApplication(processIdentifier: trackInfo.payload.PID ?? 0)?.bundleIdentifier
-                if let monitored = Defaults.shared.monitoredBundleIdentifier,
-                   bundleID != monitored {
-                    Logger.switching.info("[Reevaluate] \(bundleID ?? "?") is not the monitored source, skip")
-                    self.clearNowPlayingTrack()
+                let monitored = Defaults.shared.activeTemporarySourceLock?.bundleIdentifier
+                    ?? Defaults.shared.monitoredBundleIdentifier
+                if let monitored, bundleID != monitored {
+                    Logger.switching.info("[Reevaluate] \(bundleID ?? "?") is not the monitored source, preserve target metadata")
                     return
                 }
                 Logger.switching.info("[Reevaluate] re-evaluating switch for \(bundleID ?? "?")")
@@ -937,7 +946,7 @@ class OutputDevices: ObservableObject {
             }
         }
     }
-    
+
     /// Re-applies the current track when bit depth detection is enabled so stale pre-toggle state cannot make the next evaluation a no-op.
     func bitDepthPreferenceDidChange() {
         processQueue.async { [weak self] in

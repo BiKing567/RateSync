@@ -67,6 +67,16 @@ final class AudioFormatSelectorTests: XCTestCase {
         XCTAssertTrue(shouldPrioritize)
     }
 
+    func testDoesNotPrioritizeAppleMusicWhileTemporarySourceIsLocked() {
+        let shouldPrioritize = AppleMusicPriorityPolicy.shouldPrioritize(
+            monitoredBundleIdentifier: nil,
+            sourceBundleIdentifier: PlayerProfile.spotify.bundleIdentifier,
+            temporarySourceLockBundleIdentifier: PlayerProfile.neteaseMusic.bundleIdentifier
+        )
+
+        XCTAssertFalse(shouldPrioritize)
+    }
+
     private func format(sampleRate: Float64, bitDepth: UInt32) -> AudioStreamBasicDescription {
         var format = AudioStreamBasicDescription()
         format.mSampleRate = sampleRate

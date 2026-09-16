@@ -193,6 +193,42 @@ if [[ -f "$DMG_CREATED" && "$DMG_CREATED" != "$OUT" ]]; then
     mv "$DMG_CREATED" "$OUT"
 fi
 
+# ---- 8.5 校验最终 DMG 内的 App（防止打包工具或复制流程破坏签名）----
+verify_packaged_app() {
+    local dmg_path="$1"
+    (
+        set -e
+        local mount_point
+        mount_point="$(mktemp -d "${TMPDIR:-/tmp}/ratesync-dmg-verify.XXXXXX")"
+        trap 'hdiutil detach "$mount_point" -quiet >/dev/null 2>&1 || true; rmdir "$mount_point" 2>/dev/null || true' EXIT
+
+        hdiutil attach "$dmg_path" -nobrowse -readonly -mountpoint "$mount_point" >/dev/null
+
+        local packaged_app="$mount_point/$APP_NAME.app"
+        if [[ ! -d "$packaged_app" ]]; then
+            packaged_app="$(find "$mount_point" -maxdepth 2 -type d -name "$APP_NAME.app" -print -quit)"
+        fi
+        if [[ -z "$packaged_app" || ! -d "$packaged_app" ]]; then
+            echo "==> 错误：DMG 内找不到 $APP_NAME.app" >&2
+            exit 1
+        fi
+
+        local packaged_widget="$packaged_app/Contents/PlugIns/RateSyncWidget.appex"
+        if [[ ! -d "$packaged_widget" ]]; then
+            echo "==> 错误：DMG 内缺少 RateSyncWidget.appex" >&2
+            exit 1
+        fi
+
+        codesign --verify --deep --strict "$packaged_app"
+        verify_entitlement_value "$packaged_widget" "[Key] com.apple.security.app-sandbox"
+        verify_entitlement_value "$packaged_widget" "group.com.biking.RateSync"
+        verify_entitlement_value "$packaged_app" "group.com.biking.RateSync"
+        echo "==> DMG 内 App 与 Widget 签名校验通过"
+    )
+}
+
+verify_packaged_app "$OUT"
+
 if [[ "$SKIP_SIGNING" != "1" ]]; then
     if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
         echo "==> 警告：RATESYNC_SKIP_NOTARIZATION=1，仅生成已签名但未公证的测试包"
