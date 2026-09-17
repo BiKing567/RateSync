@@ -394,6 +394,13 @@ final class SwitchingSupportTests: XCTestCase {
         )
     }
 
+    func testWidgetStateUsesOnlyStandaloneContainerFileBridge() {
+        let paths = RateSyncWidgetConfiguration.stateStorageURLs.map(\.path)
+
+        XCTAssertEqual(paths, [RateSyncWidgetConfiguration.localWidgetStateURL.path])
+        XCTAssertFalse(paths.contains { $0.contains("/Library/Group Containers/") })
+    }
+
     func testReplayWithSameMetadataButNewNowPlayingTimestampIsNotSuppressed() {
         let first = TrackEventIdentity(
             title: "Same Song",
@@ -515,6 +522,38 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(merged?.title, "Older title")
         XCTAssertEqual(merged?.artist, "Older artist")
         XCTAssertEqual(merged?.trackUpdatedAt, Date(timeIntervalSince1970: 20))
+    }
+
+    func testWidgetStateUsesFreshSharedDefaultsWhenStateFileIsStale() {
+        let staleFileState = RateSyncWidgetConfiguration.WidgetState(
+            sampleRate: 48_000,
+            bitDepth: 32,
+            formatUpdatedAt: Date(timeIntervalSince1970: 10),
+            title: nil,
+            artist: nil,
+            artworkDataBase64: nil,
+            trackUpdatedAt: nil
+        )
+        let freshSharedDefaultsState = RateSyncWidgetConfiguration.WidgetState(
+            sampleRate: 44_100,
+            bitDepth: 24,
+            formatUpdatedAt: Date(timeIntervalSince1970: 30),
+            title: "Current song",
+            artist: "Current artist",
+            artworkDataBase64: nil,
+            trackUpdatedAt: Date(timeIntervalSince1970: 31)
+        )
+
+        let merged = RateSyncWidgetConfiguration.mergePersistedStates(
+            fileStates: [staleFileState],
+            sharedDefaultsState: freshSharedDefaultsState
+        )
+
+        XCTAssertEqual(merged?.sampleRate, 44_100)
+        XCTAssertEqual(merged?.bitDepth, 24)
+        XCTAssertEqual(merged?.title, "Current song")
+        XCTAssertEqual(merged?.artist, "Current artist")
+        XCTAssertEqual(merged?.trackUpdatedAt, Date(timeIntervalSince1970: 31))
     }
 
     func testWidgetPrefersLiveOutputFormatWhenPersistedStateIsStale() {

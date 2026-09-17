@@ -6,6 +6,29 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.4 (构建 34)</title>
+            <pubDate>Thu, 17 Sep 2026 05:40:41 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.4 修复部分安装、更新或重复构建环境下小组件无法刷新数据的问题。</p>
+                <p>RateSync 3.2.4 fixes widget data refresh issues in some installation, update, and repeated-build environments.</p>
+                <h4>修复 / Fixes</h4>
+                <ul>
+                    <li>改进小组件状态桥接，统一传递歌曲信息、采样率和位深度。</li>
+                    <li>保留旧状态迁移，避免升级后丢失当前播放信息。</li>
+                    <li>修正打包校验，使其匹配当前小组件签名和状态容器方案。</li>
+                    <li>Improved the widget state bridge for track metadata, sample rate, and bit depth.</li>
+                    <li>Kept legacy state migration so updates do not lose the current playback information.</li>
+                    <li>Updated package validation to match the current widget signing and state-container setup.</li>
+                </ul>
+                <p>顺带一句小抱怨：小组件真难维护。</p>
+                <p>A small developer complaint: widgets are really hard to maintain.</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.4">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.4</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.4/RateSync-3.2.4.dmg" sparkle:version="34" sparkle:shortVersionString="3.2.4" sparkle:edSignature="cqFFppXBPKNPkababKaYmE7fowwINPkF6MsxtsXf4uKeYltEU6E1p3MOLyWVmWynTidvab61JsNGdHEUtScDCA==" length="3118824" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.3 (构建 33)</title>
             <pubDate>Wed, 16 Sep 2026 05:02:05 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

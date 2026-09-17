@@ -24,27 +24,27 @@
 		12AFF5C12811AD40001CC6ED /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12AFF5C02811AD40001CC6ED /* AppDelegate.swift */; };
 		BF0C90C82B20BFD6002F99C9 /* RateSync.sdef in Resources */ = {isa = PBXBuildFile; fileRef = BF0C90C72B20BFD6002F99C9 /* RateSync.sdef */; };
 		BF0C90CA2B20C163002F99C9 /* ScriptableApplicationCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */; };
+		BF1A2B3C2E10000300320001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = BF1A2B3C2E10000200320001 /* Sparkle */; };
 		BF342D7C2E0935980032F398 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = BF342D7B2E0935980032F398 /* MediaRemoteAdapter */; };
 		BF342D7D2E0937D20032F398 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = BF342D7B2E0935980032F398 /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		BF342D802E0947890032F398 /* SampleRateLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D7F2E0947890032F398 /* SampleRateLabel.swift */; };
-		BF342D902E0B000100320002 /* StatusBarLabelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D902E0B000100320001 /* StatusBarLabelView.swift */; };
 		BF342D822E0948730032F398 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D812E0948730032F398 /* MenuView.swift */; };
-		BF5A88A12E0F00000032F001 /* MediaRemoteSampleRateProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */; };
+		BF342D902E0B000100320002 /* StatusBarLabelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF342D902E0B000100320001 /* StatusBarLabelView.swift */; };
 		BF5A87BA2E01D746002033D6 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A87B92E01D746002033D6 /* MenuBarController.swift */; };
+		BF5A88A12E0F00000032F001 /* MediaRemoteSampleRateProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */; };
 		BF7E0D09296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */; };
 		BF9900022E0999990032F001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BF9900032E0999990032F001 /* Localizable.strings */; };
-		BF1A2B3C2E10000300320001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = BF1A2B3C2E10000200320001 /* Sparkle */; };
 		BFA000112E10000100320001 /* RateSwitchingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000012E10000100320001 /* RateSwitchingPolicy.swift */; };
 		BFA000122E10000100320001 /* AppleMusicService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000022E10000100320001 /* AppleMusicService.swift */; };
 		BFA000132E10000100320001 /* UserScriptRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000032E10000100320001 /* UserScriptRunner.swift */; };
 		BFA000142E10000100320001 /* AudioFormatSelectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000042E10000100320001 /* AudioFormatSelectorTests.swift */; };
+		BFA000152E10000100320001 /* RateSwitchingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000012E10000100320001 /* RateSwitchingPolicy.swift */; };
+		BFA000162E10000100320001 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BFA000062E10000100320001 /* XCTest.framework */; };
 		BFA000182E10000100320001 /* SwitchingSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000172E10000100320001 /* SwitchingSupportTests.swift */; };
 		BFA0001A2E10000100320001 /* PlayerProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000192E10000100320001 /* PlayerProfile.swift */; };
 		BFA0001B2E10000100320001 /* PlayerProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000192E10000100320001 /* PlayerProfile.swift */; };
 		BFA0001D2E10000100320001 /* OneShotCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA0001C2E10000100320001 /* OneShotCompletion.swift */; };
 		BFA0001E2E10000100320001 /* OneShotCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA0001C2E10000100320001 /* OneShotCompletion.swift */; };
-		BFA000152E10000100320001 /* RateSwitchingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000012E10000100320001 /* RateSwitchingPolicy.swift */; };
-		BFA000162E10000100320001 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BFA000062E10000100320001 /* XCTest.framework */; };
 		BFA000202E10000100320001 /* SharedAudioFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000222E10000100320001 /* SharedAudioFormat.swift */; };
 		BFA000212E10000100320001 /* SharedAudioFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000222E10000100320001 /* SharedAudioFormat.swift */; };
 		BFA000232E10000100320001 /* RateSyncWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000272E10000100320001 /* RateSyncWidget.swift */; };
@@ -59,6 +59,16 @@
 		BFA000402E10000100320001 /* AppleMusicFormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA0003E2E10000100320001 /* AppleMusicFormatParser.swift */; };
 		BFA000442E10000100320001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BFA000432E10000100320001 /* Localizable.strings */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BFA000332E10000100320001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1272AA8C280DBB4900FD72BA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BFA0002C2E10000100320001;
+			remoteInfo = RateSyncWidget;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		BF342D7E2E0937D20032F398 /* Embed Frameworks */ = {
@@ -105,13 +115,13 @@
 		BF0C90C72B20BFD6002F99C9 /* RateSync.sdef */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = RateSync.sdef; sourceTree = "<group>"; };
 		BF0C90C92B20C163002F99C9 /* ScriptableApplicationCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptableApplicationCommand.swift; sourceTree = "<group>"; };
 		BF342D7F2E0947890032F398 /* SampleRateLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleRateLabel.swift; sourceTree = "<group>"; };
-		BF342D902E0B000100320001 /* StatusBarLabelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarLabelView.swift; sourceTree = "<group>"; };
 		BF342D812E0948730032F398 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
-		BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRemoteSampleRateProbe.swift; sourceTree = "<group>"; };
+		BF342D902E0B000100320001 /* StatusBarLabelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarLabelView.swift; sourceTree = "<group>"; };
 		BF5A87B92E01D746002033D6 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
+		BF5A88A02E0F00000032F001 /* MediaRemoteSampleRateProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRemoteSampleRateProbe.swift; sourceTree = "<group>"; };
 		BF7E0D08296336DA009FFEEC /* AudioStreamBasicDescription+Equatable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioStreamBasicDescription+Equatable.swift"; sourceTree = "<group>"; };
-		BF9900012E0999990032F001 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh-Hans; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
-		BF9900042E0999990032F001 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = "en.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		BF9900012E0999990032F001 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		BF9900042E0999990032F001 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		BFA000012E10000100320001 /* RateSwitchingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateSwitchingPolicy.swift; sourceTree = "<group>"; };
 		BFA000022E10000100320001 /* AppleMusicService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicService.swift; sourceTree = "<group>"; };
 		BFA000032E10000100320001 /* UserScriptRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserScriptRunner.swift; sourceTree = "<group>"; };
@@ -131,8 +141,8 @@
 		BFA000392E10000100320001 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		BFA0003C2E10000100320001 /* TrackEventIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackEventIdentity.swift; sourceTree = "<group>"; };
 		BFA0003E2E10000100320001 /* AppleMusicFormatParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicFormatParser.swift; sourceTree = "<group>"; };
-		BFA000412E10000100320001 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh-Hans; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
-		BFA000422E10000100320001 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = "en.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		BFA000412E10000100320001 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		BFA000422E10000100320001 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,7 +156,7 @@
 				BF1A2B3C2E10000300320001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-			};
+		};
 		BFA000082E10000100320001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -182,6 +192,7 @@
 				BFA0002B2E10000100320001 /* RateSyncWidget */,
 				1272AA95280DBB4900FD72BA /* Products */,
 				1234F4FD281E80A2007EC9F5 /* Frameworks */,
+				633F8E0C305AE06800122BDE /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -240,6 +251,16 @@
 				1272AA9E280DBB4B00FD72BA /* Preview Assets.xcassets */,
 			);
 			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		633F8E0C305AE06800122BDE /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				BFA000062E10000100320001 /* XCTest.framework */,
+				BFA000392E10000100320001 /* CoreAudio.framework */,
+				BFA000292E10000100320001 /* WidgetKit.framework */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		BFA000072E10000100320001 /* RateSyncTests */ = {
@@ -326,16 +347,6 @@
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
-
-/* Begin PBXContainerItemProxy section */
-		BFA000332E10000100320001 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 1272AA8C280DBB4900FD72BA /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = BFA0002C2E10000100320001;
-			remoteInfo = RateSyncWidget;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXProject section */
 		1272AA8C280DBB4900FD72BA /* Project object */ = {
@@ -457,7 +468,7 @@
 		BFA0002F2E10000100320001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-				files = (
+			files = (
 				BFA000362E10000100320001 /* CurrentOutputAudioFormat.swift in Sources */,
 				BFA000232E10000100320001 /* RateSyncWidget.swift in Sources */,
 				BFA000252E10000100320001 /* SharedAudioFormat.swift in Sources */,
@@ -614,13 +625,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Quality/Quality.entitlements;
-				CODE_SIGN_STYLE = Manual;
 				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_ENTITLEMENTS = Quality/Quality.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_ASSET_PATHS = "\"Quality/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 797KR7FB2M;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -634,14 +646,13 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 3.2.3;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.biking.RateSync";
+				MARKETING_VERSION = 3.2.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.biking.RateSync;
 				PRODUCT_NAME = RateSync;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-				);
+				SYSTEM_FRAMEWORK_SEARCH_PATHS = "$(inherited)";
 			};
 			name = Debug;
 		};
@@ -651,11 +662,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Quality/Quality.entitlements;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_ASSET_PATHS = "\"Quality/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 797KR7FB2M;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -669,14 +681,13 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 3.2.3;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.biking.RateSync";
+				MARKETING_VERSION = 3.2.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.biking.RateSync;
 				PRODUCT_NAME = RateSync;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-				);
+				SYSTEM_FRAMEWORK_SEARCH_PATHS = "$(inherited)";
 			};
 			name = Release;
 		};
@@ -686,7 +697,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.biking.RateSyncTests";
+				PRODUCT_BUNDLE_IDENTIFIER = com.biking.RateSyncTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
@@ -698,7 +709,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.biking.RateSyncTests";
+				PRODUCT_BUNDLE_IDENTIFIER = com.biking.RateSyncTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
@@ -708,17 +719,19 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = RateSyncWidget/RateSyncWidget.entitlements;
-				CODE_SIGN_STYLE = Manual;
 				CODE_SIGNING_ALLOWED = NO;
-				CURRENT_PROJECT_VERSION = 33;
-				DEVELOPMENT_TEAM = "";
+				CODE_SIGN_ENTITLEMENTS = RateSyncWidget/RateSyncWidget.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 34;
+				DEVELOPMENT_TEAM = 797KR7FB2M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RateSyncWidget/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 3.2.3;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.biking.RateSync.Widget";
+				MARKETING_VERSION = 3.2.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.biking.RateSync.Widget;
 				PRODUCT_NAME = RateSyncWidget;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -729,15 +742,17 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = RateSyncWidget/RateSyncWidget.entitlements;
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 33;
-				DEVELOPMENT_TEAM = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 34;
+				DEVELOPMENT_TEAM = 797KR7FB2M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RateSyncWidget/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 3.2.3;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.biking.RateSync.Widget";
+				MARKETING_VERSION = 3.2.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.biking.RateSync.Widget;
 				PRODUCT_NAME = RateSyncWidget;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -801,20 +816,20 @@
 				minimumVersion = 0.4.0;
 			};
 		};
-		BF342D7A2E0935980032F398 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ejbills/mediaremote-adapter";
-			requirement = {
-				kind = revision;
-				revision = 5b6afde3f501a3da567e23bf7f23d562938a1809;
-			};
-		};
 		BF1A2B3C2E10000100320001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.6.0;
+			};
+		};
+		BF342D7A2E0935980032F398 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ejbills/mediaremote-adapter";
+			requirement = {
+				kind = revision;
+				revision = 5b6afde3f501a3da567e23bf7f23d562938a1809;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -830,15 +845,15 @@
 			package = 1272AAAF280DC71B00FD72BA /* XCRemoteSwiftPackageReference "Sweep" */;
 			productName = Sweep;
 		};
-		BF342D7B2E0935980032F398 /* MediaRemoteAdapter */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = BF342D7A2E0935980032F398 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */;
-			productName = MediaRemoteAdapter;
-		};
 		BF1A2B3C2E10000200320001 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = BF1A2B3C2E10000100320001 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		BF342D7B2E0935980032F398 /* MediaRemoteAdapter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BF342D7A2E0935980032F398 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */;
+			productName = MediaRemoteAdapter;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

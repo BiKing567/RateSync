@@ -39,7 +39,7 @@ The 1.x releases also work on macOS Sequoia 15.3.1 and earlier.
 You can find the latest stable release on the 1.x branch (upstream) here: [v1.1 download link](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.0)
 
 ### For macOS Sequoia 15.4 and later
-This localized version is based on the upstream 2.0 branch and targets macOS Sequoia 15.4 and later. The current release is RateSync 3.2.3; please download the latest version from the [Releases page](https://github.com/BiKing567/RateSync/releases).
+This localized version is based on the upstream 2.0 branch and targets macOS Sequoia 15.4 and later. The current release is RateSync 3.2.4; please download the latest version from the [Releases page](https://github.com/BiKing567/RateSync/releases).
 The upstream 2.0 beta can be found here: [v2.0 Beta 1](https://github.com/vincentneo/LosslessSwitcher/releases/tag/2.0-beta1).
 
 #### Installation steps

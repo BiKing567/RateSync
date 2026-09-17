@@ -8,8 +8,8 @@ set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="RateSync"
-VERSION="3.2.3"
-BUILD="33"
+VERSION="3.2.4"
+BUILD="34"
 OUT="${1:-$PROJ_DIR/RateSync-$VERSION.dmg}"
 
 BUILD_STAGING="$(mktemp -d /tmp/lossless-dragdrop-build-XXXXXX)"
@@ -106,8 +106,6 @@ if [[ "$SKIP_SIGNING" == "1" ]]; then
         --entitlements "$PROJ_DIR/Quality/Quality.entitlements" \
         "$APP" || { echo "==> 错误：App 本机签名失败" >&2; exit 1; }
     verify_entitlement_value "$WIDGET_EXTENSION" "[Key] com.apple.security.app-sandbox"
-    verify_entitlement_value "$WIDGET_EXTENSION" "group.com.biking.RateSync"
-    verify_entitlement_value "$APP" "group.com.biking.RateSync"
     codesign --verify --deep --strict "$APP"
 else
     if [[ -z "$SIGN_IDENTITY" ]]; then
@@ -136,8 +134,6 @@ else
         "$APP" || { echo "==> 错误：App 签名失败" >&2; exit 1; }
     codesign -dv "$APP" 2>&1 | grep -E "Signature|Authority" | head -3
     verify_entitlement_value "$WIDGET_EXTENSION" "[Key] com.apple.security.app-sandbox"
-    verify_entitlement_value "$WIDGET_EXTENSION" "group.com.biking.RateSync"
-    verify_entitlement_value "$APP" "group.com.biking.RateSync"
     codesign --verify --deep --strict "$APP"
     if ! codesign -d --verbose=4 "$APP" 2>&1 | rg -q "flags=.*runtime"; then
         echo "==> 错误：发布 App 未启用 Hardened Runtime" >&2
@@ -221,8 +217,6 @@ verify_packaged_app() {
 
         codesign --verify --deep --strict "$packaged_app"
         verify_entitlement_value "$packaged_widget" "[Key] com.apple.security.app-sandbox"
-        verify_entitlement_value "$packaged_widget" "group.com.biking.RateSync"
-        verify_entitlement_value "$packaged_app" "group.com.biking.RateSync"
         echo "==> DMG 内 App 与 Widget 签名校验通过"
     )
 }

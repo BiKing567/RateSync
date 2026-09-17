@@ -41,7 +41,6 @@ enum RateSyncWidgetConfiguration {
     static let fallbackRefreshInterval: TimeInterval = 3
     static let maxArtworkDataBytes = 4 * 1024 * 1024
     static let maxArtworkBase64Length = ((maxArtworkDataBytes + 2) / 3) * 4
-    static let appGroupIdentifier = "group.com.biking.RateSync"
     private static let widgetBundleIdentifier = "com.biking.RateSync.Widget"
 
     struct WidgetState: Codable, Equatable {
@@ -62,6 +61,7 @@ enum RateSyncWidgetConfiguration {
     private static let artworkKey = "nowPlaying.artworkDataBase64"
     private static let updatedAtKey = "nowPlaying.updatedAt"
     private static let stateFileName = "ratesync-widget-state.plist"
+    private static let legacyGroupIdentifier = "group.com.biking.RateSync"
 
     static var localWidgetStateURL: URL {
         let applicationSupportURL: URL
@@ -95,102 +95,41 @@ enum RateSyncWidgetConfiguration {
     }
 
     static func loadNowPlayingTrack() -> SharedNowPlayingTrack? {
-        if let state = loadState(), let updatedAt = state.trackUpdatedAt {
-            return SharedNowPlayingTrack(
-                title: state.title,
-                artist: state.artist,
-                artworkDataBase64: state.artworkDataBase64,
-                updatedAt: updatedAt
-            )
-        }
-
-        if let values = loadLegacyValues(),
-           let updatedAt = values[updatedAtKey] as? Date {
-            return SharedNowPlayingTrack(
-                title: values[titleKey] as? String,
-                artist: values[artistKey] as? String,
-                artworkDataBase64: values[artworkKey] as? String,
-                updatedAt: updatedAt
-            )
-        }
-
-        guard let defaults = sharedDefaults,
-              let updatedAt = defaults.object(forKey: updatedAtKey) as? Date else {
+        guard let state = loadState(), let updatedAt = state.trackUpdatedAt else {
             return nil
         }
-
         return SharedNowPlayingTrack(
-            title: defaults.string(forKey: titleKey),
-            artist: defaults.string(forKey: artistKey),
-            artworkDataBase64: defaults.string(forKey: artworkKey),
+            title: state.title,
+            artist: state.artist,
+            artworkDataBase64: state.artworkDataBase64,
             updatedAt: updatedAt
         )
     }
 
     static func loadAudioFormat() -> SharedAudioFormat? {
-        if let state = loadState(),
-           let sampleRate = state.sampleRate,
-           let updatedAt = state.formatUpdatedAt {
-            return SharedAudioFormat(
-                sampleRate: sampleRate,
-                bitDepth: state.bitDepth,
-                updatedAt: updatedAt
-            )
-        }
-
-        if let values = loadLegacyValues(),
-           let updatedAt = values[formatUpdatedAtKey] as? Date,
-           let sampleRate = (values[sampleRateKey] as? NSNumber)?.doubleValue,
-           sampleRate > 0 {
-            return SharedAudioFormat(
-                sampleRate: sampleRate,
-                bitDepth: (values[bitDepthKey] as? NSNumber)?.intValue,
-                updatedAt: updatedAt
-            )
-        }
-
-        guard let defaults = sharedDefaults,
-              let updatedAt = defaults.object(forKey: formatUpdatedAtKey) as? Date else {
+        guard let state = loadState(),
+              let sampleRate = state.sampleRate,
+              let updatedAt = state.formatUpdatedAt else {
             return nil
         }
-        let sampleRate = defaults.double(forKey: sampleRateKey)
-        guard sampleRate > 0 else { return nil }
         return SharedAudioFormat(
             sampleRate: sampleRate,
-            bitDepth: defaults.object(forKey: bitDepthKey) as? Int,
+            bitDepth: state.bitDepth,
             updatedAt: updatedAt
         )
     }
 
     static func migrateLegacyState() {
+        guard Bundle.main.bundleIdentifier != widgetBundleIdentifier else { return }
+
         let existing = loadState()
-        let values = loadLegacyValues()
-        let defaults = sharedDefaults
-        let state = WidgetState(
-            sampleRate: existing?.sampleRate
-                ?? (values?[sampleRateKey] as? NSNumber)?.doubleValue
-                ?? defaults?.double(forKey: sampleRateKey),
-            bitDepth: existing?.bitDepth
-                ?? (values?[bitDepthKey] as? NSNumber)?.intValue
-                ?? defaults?.object(forKey: bitDepthKey) as? Int,
-            formatUpdatedAt: existing?.formatUpdatedAt
-                ?? values?[formatUpdatedAtKey] as? Date
-                ?? defaults?.object(forKey: formatUpdatedAtKey) as? Date,
-            title: existing?.title
-                ?? values?[titleKey] as? String
-                ?? defaults?.string(forKey: titleKey),
-            artist: existing?.artist
-                ?? values?[artistKey] as? String
-                ?? defaults?.string(forKey: artistKey),
-            artworkDataBase64: existing?.artworkDataBase64
-                ?? values?[artworkKey] as? String
-                ?? defaults?.string(forKey: artworkKey),
-            trackUpdatedAt: existing?.trackUpdatedAt
-                ?? values?[updatedAtKey] as? Date
-                ?? defaults?.object(forKey: updatedAtKey) as? Date
-        )
-        guard state.formatUpdatedAt != nil || state.trackUpdatedAt != nil else { return }
-        guard state != existing else { return }
+        let legacyStates = legacyStateURLs.compactMap { readState(at: $0) }
+        let legacyPreferenceStates = legacyPreferencesURLs
+            .compactMap { loadLegacyValues(at: $0) }
+            .compactMap { state(from: $0) }
+        guard let state = mergeStates(
+            ([existing] + legacyStates + legacyPreferenceStates).compactMap { $0 }
+        ), state != existing else { return }
         saveState(state)
     }
 
@@ -212,12 +151,6 @@ enum RateSyncWidgetConfiguration {
         state.bitDepth = bitDepth
         state.formatUpdatedAt = updatedAt
         saveState(state)
-
-        guard let defaults = sharedDefaults else { return }
-        defaults.set(sampleRate, forKey: sampleRateKey)
-        set(bitDepth, forKey: bitDepthKey, in: defaults)
-        defaults.set(updatedAt, forKey: formatUpdatedAtKey)
-        defaults.synchronize()
     }
 
     static func clearAudioFormat() {
@@ -234,12 +167,6 @@ enum RateSyncWidgetConfiguration {
         state.bitDepth = nil
         state.formatUpdatedAt = nil
         saveState(state)
-
-        guard let defaults = sharedDefaults else { return }
-        [sampleRateKey, bitDepthKey, formatUpdatedAtKey].forEach {
-            defaults.removeObject(forKey: $0)
-        }
-        defaults.synchronize()
     }
 
     static func saveNowPlayingTrack(
@@ -262,13 +189,6 @@ enum RateSyncWidgetConfiguration {
         state.artworkDataBase64 = sanitizedArtworkDataBase64(artworkDataBase64)
         state.trackUpdatedAt = updatedAt
         saveState(state)
-
-        guard let defaults = sharedDefaults else { return }
-        set(title, forKey: titleKey, in: defaults)
-        set(artist, forKey: artistKey, in: defaults)
-        set(state.artworkDataBase64, forKey: artworkKey, in: defaults)
-        defaults.set(updatedAt, forKey: updatedAtKey)
-        defaults.synchronize()
     }
 
     static func clearNowPlayingTrack() {
@@ -286,12 +206,6 @@ enum RateSyncWidgetConfiguration {
         state.artworkDataBase64 = nil
         state.trackUpdatedAt = nil
         saveState(state)
-
-        guard let defaults = sharedDefaults else { return }
-        [titleKey, artistKey, artworkKey, updatedAtKey].forEach {
-            defaults.removeObject(forKey: $0)
-        }
-        defaults.synchronize()
     }
 
     static func sanitizedArtworkDataBase64(_ value: String?) -> String? {
@@ -304,38 +218,43 @@ enum RateSyncWidgetConfiguration {
         return value
     }
 
-    private static var sharedDefaults: UserDefaults? {
-        UserDefaults(suiteName: appGroupIdentifier)
-    }
-
-    private static var appGroupContainerURL: URL? {
-        FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupIdentifier
-        ) ?? FileManager.default.homeDirectoryForCurrentUser
+    private static var legacyGroupContainerURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Group Containers", isDirectory: true)
-            .appendingPathComponent(appGroupIdentifier, isDirectory: true)
+            .appendingPathComponent(legacyGroupIdentifier, isDirectory: true)
     }
 
-    private static var stateURL: URL? {
-        guard let containerURL = appGroupContainerURL else { return nil }
-        return containerURL
-            .appendingPathComponent("Library/Application Support/RateSync", isDirectory: true)
-            .appendingPathComponent(stateFileName)
+    private static var legacyStateURLs: [URL] {
+        [
+            legacyGroupContainerURL
+                .appendingPathComponent("Library/Application Support/RateSync", isDirectory: true)
+                .appendingPathComponent(stateFileName),
+        ]
     }
 
-    private static var legacyPreferencesURL: URL? {
-        appGroupContainerURL?.appendingPathComponent(
-            "Library/Preferences/\(appGroupIdentifier).plist"
-        )
+    private static var legacyPreferencesURLs: [URL] {
+        [
+            legacyGroupContainerURL
+                .appendingPathComponent("Library/Preferences", isDirectory: true)
+                .appendingPathComponent("\(legacyGroupIdentifier).plist"),
+        ]
     }
 
     private static var stateURLs: [URL] {
-        [stateURL, localWidgetStateURL].compactMap { $0 }
+        [localWidgetStateURL]
     }
 
-    private static func loadLegacyValues() -> [String: Any]? {
-        guard let legacyPreferencesURL,
-              let data = try? Data(contentsOf: legacyPreferencesURL),
+    static var stateStorageURLs: [URL] {
+        stateURLs
+    }
+
+    private static func readState(at url: URL) -> WidgetState? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? PropertyListDecoder().decode(WidgetState.self, from: data)
+    }
+
+    private static func loadLegacyValues(at url: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: url),
               let propertyList = try? PropertyListSerialization.propertyList(
                   from: data,
                   options: [],
@@ -378,12 +297,32 @@ enum RateSyncWidgetConfiguration {
             : nil
     }
 
+    static func mergePersistedStates(
+        fileStates: [WidgetState],
+        sharedDefaultsState: WidgetState?
+    ) -> WidgetState? {
+        mergeStates(fileStates + [sharedDefaultsState].compactMap { $0 })
+    }
+
     private static func loadState() -> WidgetState? {
-        let states = stateURLs.compactMap { stateURL -> WidgetState? in
-            guard let data = try? Data(contentsOf: stateURL) else { return nil }
-            return try? PropertyListDecoder().decode(WidgetState.self, from: data)
+        let fileStates = stateURLs.compactMap { readState(at: $0) }
+        return mergeStates(fileStates)
+    }
+
+    private static func state(from values: [String: Any]) -> WidgetState? {
+        let state = WidgetState(
+            sampleRate: (values[sampleRateKey] as? NSNumber)?.doubleValue,
+            bitDepth: (values[bitDepthKey] as? NSNumber)?.intValue,
+            formatUpdatedAt: values[formatUpdatedAtKey] as? Date,
+            title: values[titleKey] as? String,
+            artist: values[artistKey] as? String,
+            artworkDataBase64: sanitizedArtworkDataBase64(values[artworkKey] as? String),
+            trackUpdatedAt: values[updatedAtKey] as? Date
+        )
+        guard state.formatUpdatedAt != nil || state.trackUpdatedAt != nil else {
+            return nil
         }
-        return mergeStates(states)
+        return state
     }
 
     private static func saveState(_ state: WidgetState) {
@@ -397,19 +336,4 @@ enum RateSyncWidgetConfiguration {
         }
     }
 
-    private static func set(_ value: String?, forKey key: String, in defaults: UserDefaults) {
-        if let value {
-            defaults.set(value, forKey: key)
-        } else {
-            defaults.removeObject(forKey: key)
-        }
-    }
-
-    private static func set(_ value: Int?, forKey key: String, in defaults: UserDefaults) {
-        if let value {
-            defaults.set(value, forKey: key)
-        } else {
-            defaults.removeObject(forKey: key)
-        }
-    }
 }
