@@ -8,8 +8,8 @@ set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="RateSync"
-VERSION="3.2.5"
-BUILD="35"
+VERSION="3.2.6"
+BUILD="36"
 OUT="${1:-$PROJ_DIR/RateSync-$VERSION.dmg}"
 
 BUILD_STAGING="$(mktemp -d /tmp/lossless-dragdrop-build-XXXXXX)"
@@ -135,7 +135,7 @@ else
     codesign -dv "$APP" 2>&1 | grep -E "Signature|Authority" | head -3
     verify_entitlement_value "$WIDGET_EXTENSION" "[Key] com.apple.security.app-sandbox"
     codesign --verify --deep --strict "$APP"
-    if ! codesign -d --verbose=4 "$APP" 2>&1 | rg -q "flags=.*runtime"; then
+    if ! codesign -d --verbose=4 "$APP" 2>&1 | rg "flags=.*runtime" >/dev/null; then
         echo "==> 错误：发布 App 未启用 Hardened Runtime" >&2
         exit 1
     fi
