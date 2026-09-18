@@ -359,6 +359,13 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(RateSyncWidgetConfiguration.widgetKind, "RateSyncAudioFormatWidget")
     }
 
+    func testWidgetRefreshRetriesAfterAppUpdateToOutliveStaleExtensionHost() {
+        XCTAssertEqual(
+            RateSyncWidgetConfiguration.launchRefreshDelays,
+            [0, 5, 15]
+        )
+    }
+
     func testWidgetTimelineHasFallbackRefreshForExternalFormatChanges() {
         let start = Date(timeIntervalSince1970: 1_000)
 

@@ -38,6 +38,8 @@ struct SharedNowPlayingTrack: Equatable {
 
 enum RateSyncWidgetConfiguration {
     static let widgetKind = "RateSyncAudioFormatWidget"
+    static let launchRefreshDelays: [TimeInterval] = [0, 5, 15]
+    static let widgetExecutableName = "RateSyncWidget"
     static let fallbackRefreshInterval: TimeInterval = 3
     static let maxArtworkDataBytes = 4 * 1024 * 1024
     static let maxArtworkBase64Length = ((maxArtworkDataBytes + 2) / 3) * 4

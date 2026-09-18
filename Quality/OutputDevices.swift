@@ -908,7 +908,47 @@ class OutputDevices: ObservableObject {
 
     func refreshWidgetTimelineOnLaunch() {
         RateSyncWidgetConfiguration.migrateLegacyState()
-        reloadWidgetTimeline(reason: "app launched", reloadAll: true)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.terminateStaleWidgetHost()
+
+            for (attempt, delay) in RateSyncWidgetConfiguration.launchRefreshDelays.enumerated() {
+                let refresh: () -> Void = { [weak self] in
+                    guard let self else { return }
+                    self.reloadWidgetTimeline(
+                        reason: attempt == 0 ? "app launched" : "app launch retry \(attempt)",
+                        reloadAll: attempt == 0
+                    )
+                }
+                if delay == 0 {
+                    DispatchQueue.main.async(execute: refresh)
+                } else {
+                    DispatchQueue.main.asyncAfter(
+                        deadline: .now() + delay,
+                        execute: refresh
+                    )
+                }
+            }
+        }
+    }
+
+    private func terminateStaleWidgetHost() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        process.arguments = ["-TERM", RateSyncWidgetConfiguration.widgetExecutableName]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            Logger.switching.info(
+                "[Widget] stale host cleanup exited with status \(process.terminationStatus, privacy: .public)"
+            )
+        } catch {
+            Logger.switching.error(
+                "[Widget] stale host cleanup failed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
     
     /// Shared formatted text for the menu bar label and the menu content view.
