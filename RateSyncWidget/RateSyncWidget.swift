@@ -206,13 +206,9 @@ struct RateSyncWidgetProvider: TimelineProvider {
 
     private func currentEntry() -> RateSyncWidgetEntry {
         let persistedAudioFormat = RateSyncWidgetConfiguration.loadAudioFormat()
-        let liveAudioFormat = CurrentOutputAudioFormat.load()
         return RateSyncWidgetEntry(
             date: Date(),
-            audioFormat: RateSyncWidgetConfiguration.preferredAudioFormat(
-                persisted: persistedAudioFormat,
-                live: liveAudioFormat
-            ),
+            audioFormat: RateSyncWidgetConfiguration.widgetAudioFormat(persisted: persistedAudioFormat),
             nowPlayingTrack: RateSyncWidgetConfiguration.loadNowPlayingTrack()
         )
     }

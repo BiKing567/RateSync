@@ -39,7 +39,7 @@ RateSync 会自动将当前音频输出设备的采样率和位深度切换到�
 你可以在此处找到 1.x 分支的最新稳定版（上游原版）：[v1.1 下载链接](https://github.com/vincentneo/LosslessSwitcher/releases/tag/1.1.0)
 
 ### 适用于 macOS Sequoia 15.4 及更新版本
-汉化版基于上游 2.0 分支开发，适用于 macOS Sequoia 15.4 及更新版本。当前版本为 RateSync 3.2.4，最新发行版请前往 [Releases 页面](https://github.com/BiKing567/RateSync/releases) 下载。
+汉化版基于上游 2.0 分支开发，适用于 macOS Sequoia 15.4 及更新版本。当前版本为 RateSync 3.2.5，最新发行版请前往 [Releases 页面](https://github.com/BiKing567/RateSync/releases) 下载。
 上游原版的 2.0 测试版见：[v2.0 Beta 1](https://github.com/vincentneo/LosslessSwitcher/releases/tag/2.0-beta1)。
 
 #### 安装步骤
@@ -49,6 +49,13 @@ RateSync 会自动将当前音频输出设备的采样率和位深度切换到�
 如果你希望开机自动运行，可以在系统设置中添加 RateSync：
 ```
 > 用户与群组 > 登录项 > 添加 RateSync 应用
+```
+
+### 通过 Homebrew 安装
+如果已安装 Homebrew，可以直接运行以下命令安装 RateSync。Homebrew 会自动添加 RateSync 的 tap：
+
+```bash
+brew install --cask BiKing567/ratesync/ratesync
 ```
 
 ## 应用详情

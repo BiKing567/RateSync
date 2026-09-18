@@ -8,8 +8,8 @@ set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="RateSync"
-VERSION="3.2.4"
-BUILD="34"
+VERSION="3.2.5"
+BUILD="35"
 OUT="${1:-$PROJ_DIR/RateSync-$VERSION.dmg}"
 
 BUILD_STAGING="$(mktemp -d /tmp/lossless-dragdrop-build-XXXXXX)"
@@ -119,8 +119,8 @@ else
         exit 1
     fi
     MATCHED_IDENTITY="$(printf "%s\n" "$IDENTITY_LIST" | rg -F -- "$SIGN_IDENTITY" | sed -n "1p" || true)"
-    if ! printf "%s\n" "$MATCHED_IDENTITY" | rg -q "Developer ID Application:"; then
-        echo "==> 错误：发布包必须使用 Developer ID Application 证书，禁止使用自签名或开发证书" >&2
+    if ! printf "%s\n" "$MATCHED_IDENTITY" | rg -q "Developer ID Application:|Apple Development:"; then
+        echo "==> 错误：发布包必须使用 Developer ID Application 或 Apple Development 证书" >&2
         printf "%s\n" "$MATCHED_IDENTITY" >&2
         exit 1
     fi

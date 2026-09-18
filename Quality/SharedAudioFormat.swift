@@ -94,6 +94,10 @@ enum RateSyncWidgetConfiguration {
         live ?? persisted
     }
 
+    static func widgetAudioFormat(persisted: SharedAudioFormat?) -> SharedAudioFormat? {
+        persisted
+    }
+
     static func loadNowPlayingTrack() -> SharedNowPlayingTrack? {
         guard let state = loadState(), let updatedAt = state.trackUpdatedAt else {
             return nil

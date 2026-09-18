@@ -6,6 +6,22 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.5 (构建 35)</title>
+            <pubDate>Fri, 18 Sep 2026 09:39:33 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.5 改进切歌后小组件的刷新响应，减少显示上一首歌曲信息的延迟。</p>
+                <p>RateSync 3.2.5 improves widget responsiveness after track changes and reduces stale previous-track information.</p>
+                <h4>修复 / Fixes</h4>
+                <ul>
+                    <li>切换歌曲后更快显示当前歌曲、采样率和位深度。</li>
+                    <li>Improved widget refresh responsiveness after track changes.</li>
+                </ul>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.5</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.5/RateSync-3.2.5.dmg" sparkle:version="35" sparkle:shortVersionString="3.2.5" sparkle:edSignature="/wEDcBE/rr9gQNoXaIM+eG1em7sZ6XzNjUXV9a6ca5qn02ZNMzy2lBZtU32ZrMBWieVzd/vU/hocUvoHopa+Bw==" length="4290868" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.4 (构建 34)</title>
             <pubDate>Thu, 17 Sep 2026 05:40:41 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

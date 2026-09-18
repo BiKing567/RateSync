@@ -577,6 +577,19 @@ final class SwitchingSupportTests: XCTestCase {
         )
     }
 
+    func testWidgetAudioFormatUsesPersistedStateWithoutLiveOutputProbe() {
+        let persisted = SharedAudioFormat(
+            sampleRate: 44_100,
+            bitDepth: 32,
+            updatedAt: Date(timeIntervalSince1970: 10)
+        )
+
+        XCTAssertEqual(
+            RateSyncWidgetConfiguration.widgetAudioFormat(persisted: persisted),
+            persisted
+        )
+    }
+
     func testPlayerPriorityMenuTitleIncludesPlayerNameAfterOrderNumber() {
         XCTAssertEqual(
             MenuLabelPolicy.playerPriorityTitle(index: 1, localizedName: "Apple Music"),
