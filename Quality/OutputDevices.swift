@@ -414,11 +414,8 @@ class OutputDevices: ObservableObject {
                    state.isPlaying,
                    let appleMusicSampleRate = state.sampleRate,
                    appleMusicSampleRate > 0 {
-                    let stat = CMPlayerStats(
-                        sampleRate: appleMusicSampleRate,
-                        bitDepth: self.previousBitDepth ?? 24,
-                        date: Date()
-                    )
+                    // This fallback reports only the rate; output bit depth is not source evidence.
+                    let stat = CMPlayerStats.sampleRateOnly(sampleRate: appleMusicSampleRate)
                     Logger.switching.info("[AM Priority] Apple Music is playing, using its sample rate")
                     self.applyStats([stat], source: .appleMusicPriority, expectedTrack: expectedTrack, recursion: recursion)
                     self.scheduleAppleMusicEQUpdate()
@@ -441,11 +438,7 @@ class OutputDevices: ObservableObject {
         recursion: Bool
     ) {
         if let sampleRate, sampleRate > 0 {
-            let bitDepth = RateSwitchingPolicy.bitDepth(
-                reportedByMediaRemote: reportedBitDepth,
-                fallback: previousBitDepth
-            )
-            let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: bitDepth, date: Date())
+            let stat = CMPlayerStats(sampleRate: sampleRate, bitDepth: reportedBitDepth, date: Date())
             Logger.switching.info("[MRProbe] direct audio format: \(sampleRate) Hz, \(reportedBitDepth ?? -1) bit")
             applyStats([stat], source: .mediaRemoteProbe, expectedTrack: expectedTrack, recursion: recursion)
         } else {
@@ -503,11 +496,8 @@ class OutputDevices: ObservableObject {
                        state.isPlaying,
                        let sampleRate = state.sampleRate,
                        sampleRate > 0 {
-                        let stat = CMPlayerStats(
-                            sampleRate: sampleRate,
-                            bitDepth: self.previousBitDepth ?? 24,
-                            date: Date()
-                        )
+                        // This fallback reports only the rate; output bit depth is not source evidence.
+                        let stat = CMPlayerStats.sampleRateOnly(sampleRate: sampleRate)
                         self.appleMusicFallbackFormat = stat
                         Logger.switching.info("[LogFallback] Apple Music AppleScript sample rate: \(sampleRate)")
                         self.applyStats([stat], source: .decoderLog, expectedTrack: expectedTrack, recursion: recursion)
@@ -525,7 +515,7 @@ class OutputDevices: ObservableObject {
            let track = self.currentTrack,
            let bundleID = Self.resolveBundleIdentifier(track: track),
            let preset = Self.presetSampleRate(for: bundleID) {
-            let stat = CMPlayerStats(sampleRate: preset, bitDepth: 16, date: Date())
+            let stat = CMPlayerStats.sampleRateOnly(sampleRate: preset)
             Logger.switching.info("[Preset] \(bundleID) -> \(preset) Hz")
             self.applyStats([stat], source: .preset, expectedTrack: expectedTrack, recursion: recursion)
         } else {
@@ -717,12 +707,18 @@ class OutputDevices: ObservableObject {
            first.sampleRate <= RateSwitchingPolicy.maxPlausibleSampleRate {
             didFindStat = true
             let sampleRate = Float64(first.sampleRate)
+            let currentOutputBitDepth = defaultDevice?.streams(scope: .output)?.first?.physicalFormat
+                .map { Int($0.mBitsPerChannel) }
+                .flatMap { $0 > 0 ? $0 : nil }
+            // This is only a selector hint; the final 24-bit fallback must never count as evidence
+            // for changing bit depth when the source did not report one.
+            let selectionHintBitDepth = first.bitDepth ?? currentOutputBitDepth ?? previousBitDepth ?? 24
             // Clamp instead of truncating, and clamp before use:
             // Int32(truncatingIfNeeded:) silently turns an absurd depth
             // into a bogus but plausible-looking value
             // (99999999999999 -> 276447231). A garbage depth must not cost
             // us a valid rate, so it is clamped, not rejected.
-            let bitDepth = Int32(clamping: min(max(first.bitDepth, 1), RateSwitchingPolicy.maxPlausibleBitDepth))
+            let bitDepth = Int32(clamping: min(max(selectionHintBitDepth, 1), RateSwitchingPolicy.maxPlausibleBitDepth))
 
             // Boundary gating: right after a track change, players
             // transitioning between formats (e.g. Dolby Atmos) report an
@@ -795,7 +791,12 @@ class OutputDevices: ObservableObject {
                    let cachedSampleRate = trackAndSample[currentTrack],
                    defaultDevice.nominalSampleRate == cachedSampleRate,
                    cachedSampleRate == sampleRate {
-                    let bitDepthChanged = enableBitDepthDetection && trackAndBitDepth[currentTrack] != Int(suitableFormat.mBitsPerChannel)
+                    let bitDepthChanged = RateSwitchingPolicy.shouldApplyBitDepthChange(
+                        isEnabled: enableBitDepthDetection,
+                        reportedBitDepth: first.bitDepth,
+                        currentBitDepth: currentOutputBitDepth ?? trackAndBitDepth[currentTrack],
+                        selectedBitDepth: Int(suitableFormat.mBitsPerChannel)
+                    )
                     if !bitDepthChanged {
                         Logger.switching.info("same track, sample rate already applied, skip")
                         return
@@ -803,7 +804,12 @@ class OutputDevices: ObservableObject {
                     Logger.switching.info("same track, bit depth changed, re-applying format")
                 }
                 let sampleRateChanged = suitableFormat.mSampleRate != previousSampleRate
-                let bitDepthChanged = enableBitDepthDetection && Int(suitableFormat.mBitsPerChannel) != previousBitDepth
+                let bitDepthChanged = RateSwitchingPolicy.shouldApplyBitDepthChange(
+                    isEnabled: enableBitDepthDetection,
+                    reportedBitDepth: first.bitDepth,
+                    currentBitDepth: currentOutputBitDepth ?? previousBitDepth,
+                    selectedBitDepth: Int(suitableFormat.mBitsPerChannel)
+                )
                 let formatChanged = sampleRateChanged || bitDepthChanged
 
                 // An equal-rate result is a NO-OP (device already correct).
@@ -817,16 +823,23 @@ class OutputDevices: ObservableObject {
                     return
                 }
 
-                Logger.switching.info("APPLYING rate \(suitableFormat.mSampleRate, privacy: .public) Hz depth \(suitableFormat.mBitsPerChannel, privacy: .public)")
-                if enableBitDepthDetection {
+                if first.bitDepth != nil {
+                    Logger.switching.info("APPLYING rate \(suitableFormat.mSampleRate, privacy: .public) Hz depth \(suitableFormat.mBitsPerChannel, privacy: .public)")
+                } else {
+                    Logger.switching.info("APPLYING rate \(suitableFormat.mSampleRate, privacy: .public) Hz; bit depth unknown, preserving current depth")
+                }
+                if enableBitDepthDetection && first.bitDepth != nil {
                     self.setFormats(device: defaultDevice, format: suitableFormat)
                 }
-                else if sampleRateChanged { // bit depth disabled
+                else if sampleRateChanged { // Keep the current depth when the source did not report one.
                     defaultDevice.setNominalSampleRate(suitableFormat.mSampleRate)
                 }
-                self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel), runUserScript: formatChanged)
+                let appliedBitDepth = first.bitDepth != nil
+                    ? Int(suitableFormat.mBitsPerChannel)
+                    : currentOutputBitDepth ?? previousBitDepth
+                self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: appliedBitDepth, runUserScript: formatChanged)
                 if let currentTrack = currentTrack {
-                    self.cacheTrackResult(currentTrack, sampleRate: suitableFormat.mSampleRate, bitDepth: Int(suitableFormat.mBitsPerChannel))
+                    self.cacheTrackResult(currentTrack, sampleRate: suitableFormat.mSampleRate, bitDepth: appliedBitDepth)
                 }
             }
         }
@@ -845,7 +858,7 @@ class OutputDevices: ObservableObject {
     /// Only `currentTrack` is ever read back, but entries survive until the
     /// next track change, so an unbounded table would retain one entry per
     /// distinct track ever played in a long-running menu bar process.
-    private func cacheTrackResult(_ track: MediaTrack, sampleRate: Float64, bitDepth: Int) {
+    private func cacheTrackResult(_ track: MediaTrack, sampleRate: Float64, bitDepth: Int?) {
         self.trackAndSample[track] = sampleRate
         self.trackAndBitDepth[track] = bitDepth
         // Dictionary ordering is unspecified, so this trims arbitrary

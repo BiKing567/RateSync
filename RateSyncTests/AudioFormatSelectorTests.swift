@@ -40,15 +40,6 @@ final class AudioFormatSelectorTests: XCTestCase {
         XCTAssertNil(selectedFormat)
     }
 
-    func testUsesReportedMediaRemoteBitDepth() {
-        let bitDepth = RateSwitchingPolicy.bitDepth(
-            reportedByMediaRemote: 32,
-            fallback: 24
-        )
-
-        XCTAssertEqual(bitDepth, 32)
-    }
-
     func testDoesNotPrioritizeAppleMusicForExplicitMonitoringSource() {
         let shouldPrioritize = AppleMusicPriorityPolicy.shouldPrioritize(
             monitoredBundleIdentifier: "com.spotify.client",

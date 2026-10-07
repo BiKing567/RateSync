@@ -11,14 +11,14 @@ import Sweep
 
 struct CMPlayerStats {
     let sampleRate: Double // Hz
-    let bitDepth: Int
+    let bitDepth: Int?
     let date: Date
     let isAppleMusicFormat: Bool
     let isDolbyAtmos: Bool
 
     init(
         sampleRate: Double,
-        bitDepth: Int,
+        bitDepth: Int?,
         date: Date,
         isAppleMusicFormat: Bool = false,
         isDolbyAtmos: Bool = false
@@ -29,11 +29,16 @@ struct CMPlayerStats {
         self.isAppleMusicFormat = isAppleMusicFormat
         self.isDolbyAtmos = isDolbyAtmos
     }
+
+    static func sampleRateOnly(sampleRate: Double, date: Date = Date()) -> CMPlayerStats {
+        CMPlayerStats(sampleRate: sampleRate, bitDepth: nil, date: date)
+    }
 }
 
 extension CMPlayerStats: CustomStringConvertible {
     var description: String {
-        return "CMPlayerStats(sampleRate: \(sampleRate), bitDepth: \(bitDepth), appleMusicFormat: \(isAppleMusicFormat), dolbyAtmos: \(isDolbyAtmos))"
+        let bitDepthDescription = bitDepth.map { String($0) } ?? "unknown"
+        return "CMPlayerStats(sampleRate: \(sampleRate), bitDepth: \(bitDepthDescription), appleMusicFormat: \(isAppleMusicFormat), dolbyAtmos: \(isDolbyAtmos))"
     }
 }
 
@@ -43,7 +48,7 @@ class CMPlayerParser {
         let highLevelStats = AppleMusicFormatParser.parse(logEntries).map { evidence in
             CMPlayerStats(
                 sampleRate: evidence.sampleRate,
-                bitDepth: evidence.bitDepth ?? 24,
+                bitDepth: evidence.bitDepth,
                 date: evidence.date,
                 isAppleMusicFormat: true,
                 isDolbyAtmos: evidence.isDolbyAtmos
@@ -150,7 +155,7 @@ class CMPlayerParser {
             }
 
             if let sr = sampleRate, sr > 0 {
-                let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth ?? 16, date: date)
+                let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth, date: date)
                 stats.append(stat)
                 sampleRate = nil
                 bitDepth = nil

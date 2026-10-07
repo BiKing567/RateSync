@@ -43,8 +43,13 @@ enum RateSwitchingPolicy {
         }
     }
 
-    static func bitDepth(reportedByMediaRemote: Int?, fallback: Int?) -> Int {
-        reportedByMediaRemote ?? fallback ?? 24
+    static func shouldApplyBitDepthChange(
+        isEnabled: Bool,
+        reportedBitDepth: Int?,
+        currentBitDepth: Int?,
+        selectedBitDepth: Int
+    ) -> Bool {
+        isEnabled && reportedBitDepth != nil && currentBitDepth != selectedBitDepth
     }
 
     static func shouldAcceptUnverifiedMediaRemoteFormat(expectedPID: pid_t?) -> Bool {

@@ -99,6 +99,93 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertFalse(stat?.isDolbyAtmos == true)
     }
 
+    func testAppleMusicParserDoesNotInventBitDepthWhenHighLevelLogOmitsIt() {
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 405),
+                message: "play> cm>> mediaFormatinfo '<private>' , asbdFormatID = qlac, lossless, asbdSampleRate = 44.1 kHz, is not rendering spatial audio"
+            )
+        ]
+
+        let stat = CMPlayerParser.parseAppleMusicConsoleLogs(entries).first
+
+        XCTAssertEqual(stat?.sampleRate, 44_100)
+        XCTAssertNil(stat?.bitDepth, "An omitted bit depth must remain unknown, not become a 24-bit switching instruction.")
+    }
+
+    func testAudioQueueParserDoesNotInventBitDepthWithoutLPCMEvidence() {
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 407),
+                message: "AudioQueueObject.cpp:488 New output; format 2 ch, 44100 Hz, Float32, ..."
+            )
+        ]
+
+        let stat = CMPlayerParser.parseAudioQueueConsoleLogs(entries).first
+
+        XCTAssertEqual(stat?.sampleRate, 44_100)
+        XCTAssertNil(stat?.bitDepth, "A sample-rate-only AudioQueue log must not become a 16-bit instruction.")
+    }
+
+    func testAudioQueueParserPreservesExplicitLPCMBitDepth() {
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 408),
+                message: "AudioConverter from 2 ch, 44100 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to ..."
+            )
+        ]
+
+        let stat = CMPlayerParser.parseAudioQueueConsoleLogs(entries).first
+
+        XCTAssertEqual(stat?.sampleRate, 44_100)
+        XCTAssertEqual(stat?.bitDepth, 24)
+    }
+
+    func testSampleRateOnlyCandidateCarriesNoBitDepthEvidence() {
+        let stat = CMPlayerStats.sampleRateOnly(
+            sampleRate: 44_100,
+            date: Date(timeIntervalSince1970: 409)
+        )
+
+        XCTAssertEqual(stat.sampleRate, 44_100)
+        XCTAssertNil(stat.bitDepth)
+    }
+
+    func testAppleMusicParserPreservesReportedBitDepth() {
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 406),
+                message: "play> cm>> mediaFormatinfo '<private>' , asbdFormatID = qlac, sdBitDepth = 16 bit, lossless, asbdSampleRate = 44.1 kHz"
+            )
+        ]
+
+        let stat = CMPlayerParser.parseAppleMusicConsoleLogs(entries).first
+
+        XCTAssertEqual(stat?.bitDepth, 16)
+    }
+
+    func testUnknownBitDepthCannotTriggerSameRateBitDepthReapplication() {
+        XCTAssertFalse(
+            RateSwitchingPolicy.shouldApplyBitDepthChange(
+                isEnabled: true,
+                reportedBitDepth: nil,
+                currentBitDepth: 16,
+                selectedBitDepth: 24
+            )
+        )
+    }
+
+    func testExplicitBitDepthCanTriggerBitDepthReapplication() {
+        XCTAssertTrue(
+            RateSwitchingPolicy.shouldApplyBitDepthChange(
+                isEnabled: true,
+                reportedBitDepth: 24,
+                currentBitDepth: 16,
+                selectedBitDepth: 24
+            )
+        )
+    }
+
     func testAppleMusicHighLevelFormatUsesShortEvidenceGate() {
         let policy = RateSwitchingPolicy.gatePolicy(for: .appleMusicFormatLog)
 

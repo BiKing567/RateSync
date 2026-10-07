@@ -56,6 +56,9 @@
 		BFA0003F2E10000100320001 /* AppleMusicFormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA0003E2E10000100320001 /* AppleMusicFormatParser.swift */; };
 		BFA000402E10000100320001 /* AppleMusicFormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA0003E2E10000100320001 /* AppleMusicFormatParser.swift */; };
 		BFA000442E10000100320001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BFA000432E10000100320001 /* Localizable.strings */; };
+		3DE301B5C3F9464FB9D4D6D7 /* Console.swift in RateSyncTests Sources */ = {isa = PBXBuildFile; fileRef = 1272AAAB280DC5E900FD72BA /* Console.swift */; };
+		ED4BD2FD8D97481D96BD2EA3 /* CMPlayerStuff.swift in RateSyncTests Sources */ = {isa = PBXBuildFile; fileRef = 1272AAAD280DC68A00FD72BA /* CMPlayerStuff.swift */; };
+		1C67B097713440E085C7506B /* Sweep in RateSyncTests Frameworks */ = {isa = PBXBuildFile; productRef = 692721F23B034ACBBAF01A3A /* Sweep */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -158,6 +161,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BFA000162E10000100320001 /* XCTest.framework in Frameworks */,
+				1C67B097713440E085C7506B /* Sweep in RateSyncTests Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -318,6 +322,9 @@
 			dependencies = (
 			);
 			name = RateSyncTests;
+			packageProductDependencies = (
+				692721F23B034ACBBAF01A3A /* Sweep */,
+			);
 			productName = RateSyncTests;
 			productReference = BFA000052E10000100320001 /* RateSyncTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -455,6 +462,8 @@
 				BFA000212E10000100320001 /* SharedAudioFormat.swift in Sources */,
 				BFA0003B2E10000100320001 /* TrackEventIdentity.swift in Sources */,
 				BFA000402E10000100320001 /* AppleMusicFormatParser.swift in Sources */,
+				3DE301B5C3F9464FB9D4D6D7 /* Console.swift in RateSyncTests Sources */,
+				ED4BD2FD8D97481D96BD2EA3 /* CMPlayerStuff.swift in RateSyncTests Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -846,6 +855,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BF342D7A2E0935980032F398 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */;
 			productName = MediaRemoteAdapter;
+		};
+		692721F23B034ACBBAF01A3A /* Sweep */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1272AAAF280DC71B00FD72BA /* XCRemoteSwiftPackageReference "Sweep" */;
+			productName = Sweep;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
