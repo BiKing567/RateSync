@@ -6,6 +6,18 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>RateSync 3.2.7 Beta 1（预发布测试版）</title>
+            <pubDate>Wed, 07 Oct 2026 12:22:56 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p><strong>预发布测试版 / PRE-RELEASE BETA</strong></p>
+                <p>RateSync 3.2.7 Beta 1 is a pre-release build for testing and is not the stable release. Please report issues through GitHub Issues.</p>
+                <p>RateSync 3.2.7 Beta 1 为预发布测试版，暂非稳定版；如遇问题请通过 GitHub Issues 反馈。</p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.1</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.7-beta.1/RateSync-3.2.7-beta.1.dmg" sparkle:version="38" sparkle:shortVersionString="3.2.7" sparkle:edSignature="JimUAPBr09b75WGPbO63Y8OR/ec1Q+X+EQ+OjrHKQhLM/T0VY6A6Hn5XV9vKjsceUBvw1Bd45W9EuMNqptLuBw==" length="4769950" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.6 (构建 36)</title>
             <pubDate>Fri, 18 Sep 2026 11:06:13 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
