@@ -13,32 +13,32 @@ enum UserScriptValidator {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
-            Logger.switching.error("[Script] rejected: not found or is directory \(path, privacy: .public)")
+            RateSyncLog.switching.error("[Script] rejected: not found or is directory \(path, privacy: .public)")
             return false
         }
         guard fileManager.isExecutableFile(atPath: path) else {
-            Logger.switching.error("[Script] rejected: not executable \(path, privacy: .public)")
+            RateSyncLog.switching.error("[Script] rejected: not executable \(path, privacy: .public)")
             return false
         }
         let url = URL(fileURLWithPath: path)
         if let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]), values.isSymbolicLink == true {
-            Logger.switching.error("[Script] rejected: symlink \(path, privacy: .public)")
+            RateSyncLog.switching.error("[Script] rejected: symlink \(path, privacy: .public)")
             return false
         }
         let resolved = url.resolvingSymlinksInPath().path
         let standardized = url.standardized.path
         guard resolved == standardized else {
-            Logger.switching.error("[Script] rejected: intermediate symlink \(path, privacy: .public) -> \(resolved, privacy: .public)")
+            RateSyncLog.switching.error("[Script] rejected: intermediate symlink \(path, privacy: .public) -> \(resolved, privacy: .public)")
             return false
         }
         guard let attributes = try? fileManager.attributesOfItem(atPath: path),
               let owner = attributes[.ownerAccountName] as? String else {
-            Logger.switching.error("[Script] rejected: cannot determine owner \(path, privacy: .public)")
+            RateSyncLog.switching.error("[Script] rejected: cannot determine owner \(path, privacy: .public)")
             return false
         }
         let currentUser = NSUserName()
         guard owner == currentUser else {
-            Logger.switching.error("[Script] rejected: owner \(owner, privacy: .public) != \(currentUser, privacy: .public)")
+            RateSyncLog.switching.error("[Script] rejected: owner \(owner, privacy: .public) != \(currentUser, privacy: .public)")
             return false
         }
         return true
@@ -50,7 +50,7 @@ enum UserScriptRunner {
         let livePath = UserDefaults.standard.string(forKey: "KeyShellScriptPath")
         guard let scriptPath = livePath ?? Defaults.shared.shellScriptPath else { return }
         guard UserScriptValidator.isValid(at: scriptPath) else {
-            Logger.switching.error("[Script] validation failed, not executing \(scriptPath, privacy: .public)")
+            RateSyncLog.switching.error("[Script] validation failed, not executing \(scriptPath, privacy: .public)")
             if livePath != nil {
                 UserDefaults.standard.removeObject(forKey: "KeyShellScriptPath")
                 DispatchQueue.main.async {
@@ -70,7 +70,7 @@ enum UserScriptRunner {
                 let task = try NSUserUnixTask(url: URL(fileURLWithPath: scriptPath))
                 try await task.execute(withArguments: arguments)
             } catch {
-                Logger.switching.info("TASK ERR \(error)")
+                RateSyncLog.switching.info("TASK ERR \(error)")
             }
         }
     }

@@ -11,6 +11,7 @@ import Foundation
 enum RateSource {
     case mediaRemoteProbe
     case appleMusicPriority
+    case appleMusicCurrentTrack
     case appleMusicFormatLog
     case decoderLog
     case audioQueueLog
@@ -38,7 +39,7 @@ enum RateSwitchingPolicy {
             return .audioQueue
         case .appleMusicFormatLog:
             return .appleMusicFormat
-        case .staleAudioQueueLog, .mediaRemoteProbe, .appleMusicPriority, .decoderLog, .preset:
+        case .staleAudioQueueLog, .mediaRemoteProbe, .appleMusicPriority, .appleMusicCurrentTrack, .decoderLog, .preset:
             return .standard
         }
     }
@@ -54,6 +55,140 @@ enum RateSwitchingPolicy {
 
     static func shouldAcceptUnverifiedMediaRemoteFormat(expectedPID: pid_t?) -> Bool {
         expectedPID == nil
+    }
+}
+
+enum AppleMusicSampleRateQueryResult: Equatable {
+    case sampleRate(Double)
+    case missingValue
+    case notPlaying
+    case unavailable
+
+    var logLabel: String {
+        switch self {
+        case .sampleRate(let sampleRate): return "sampleRate=\(sampleRate)"
+        case .missingValue: return "missing value"
+        case .notPlaying: return "not playing"
+        case .unavailable: return "unavailable"
+        }
+    }
+}
+
+enum AppleMusicSampleRateResolution: Equatable {
+    case apply(Double)
+    case retry(after: TimeInterval)
+    case fallbackToLogs
+    case noPlayback
+}
+
+enum AppleMusicSampleRatePolicy {
+    static let maximumWait: TimeInterval = 6.0
+    static let retryInterval: TimeInterval = 0.5
+
+    static func resolution(
+        for result: AppleMusicSampleRateQueryResult,
+        elapsed: TimeInterval
+    ) -> AppleMusicSampleRateResolution {
+        switch result {
+        case .sampleRate(let rate):
+            guard rate.isFinite, rate > 0, rate <= RateSwitchingPolicy.maxPlausibleSampleRate else {
+                return .fallbackToLogs
+            }
+            return .apply(rate)
+        case .missingValue:
+            let remaining = maximumWait - max(0, elapsed)
+            guard remaining > 0 else { return .fallbackToLogs }
+            return .retry(after: min(retryInterval, remaining))
+        case .notPlaying:
+            return .noPlayback
+        case .unavailable:
+            return .fallbackToLogs
+        }
+    }
+}
+
+enum AppleMusicSampleRateQueryPolicy {
+    static func isCurrent(expectedQueryID: UInt64, currentQueryID: UInt64) -> Bool {
+        expectedQueryID == currentQueryID
+    }
+}
+
+enum AppleMusicFormatProbePolicy {
+    static let refreshInterval: TimeInterval = 1.5
+
+    static func retryDelay(after elapsed: TimeInterval, hasPriorityEvidence: Bool) -> TimeInterval? {
+        guard !hasPriorityEvidence, elapsed.isFinite else { return nil }
+        let remaining = AppleMusicSampleRatePolicy.maximumWait - max(0, elapsed)
+        guard remaining > 0 else { return nil }
+        return min(AppleMusicSampleRatePolicy.retryInterval, remaining)
+    }
+
+    /// The initial probe is bounded by the six-second current-track window,
+    /// but a decoder line can arrive after that probe completed. Allow a
+    /// cooldown-limited follow-up scan for the same playback generation.
+    static func shouldSchedule(
+        generation: UInt64,
+        scheduledGeneration: UInt64?,
+        completedGeneration: UInt64?,
+        lastCompletedAt: Date?,
+        now: Date
+    ) -> Bool {
+        guard scheduledGeneration != generation else { return false }
+        guard completedGeneration == generation else { return true }
+        guard let lastCompletedAt else { return true }
+        return now.timeIntervalSince(lastCompletedAt) >= refreshInterval
+    }
+}
+
+enum AppleMusicPlaybackRecoveryPolicy {
+    static let retryInterval: TimeInterval = 3.0
+
+    /// A paused player can keep the same Now Playing track snapshot. Keep a
+    /// low-frequency recheck alive so a later resume is not dependent on a
+    /// second metadata event from MediaRemote.
+    static func retryDelay(hasCurrentTrack: Bool) -> TimeInterval? {
+        hasCurrentTrack ? retryInterval : nil
+    }
+}
+
+enum AppleMusicCurrentTrackRateAction: Equatable {
+    case applyCurrentTrackRate
+    case applyPriorityFormat
+    case waitForAtmosProbe
+    case fallbackToLogs
+}
+
+enum AppleMusicCurrentTrackRatePolicy {
+    /// Music can briefly expose the previous/rendering variant's rate while a
+    /// high-resolution track is settling. Recheck the same track after this
+    /// short cooldown instead of treating the first valid value as final.
+    static let revalidationInterval: TimeInterval = 2.0
+
+    static func shouldRevalidate(lastQueriedAt: Date?, now: Date) -> Bool {
+        guard let lastQueriedAt else { return true }
+        return now.timeIntervalSince(lastQueriedAt) >= revalidationInterval
+    }
+
+    static func shouldPreserveCurrentTrackRateOnFallback(
+        hasKnownCurrentTrackRate: Bool
+    ) -> Bool {
+        hasKnownCurrentTrackRate
+    }
+
+    static func action(
+        hasCurrentTrackRate: Bool,
+        hasPriorityEvidence: Bool,
+        atmosProbeCompleted: Bool
+    ) -> AppleMusicCurrentTrackRateAction {
+        if hasPriorityEvidence { return .applyPriorityFormat }
+        if hasCurrentTrackRate { return .applyCurrentTrackRate }
+        return atmosProbeCompleted ? .fallbackToLogs : .waitForAtmosProbe
+    }
+}
+
+enum TrackRequestPolicy {
+    static func isCurrent(expectedGeneration: UInt64, currentGeneration: UInt64) -> Bool {
+        expectedGeneration == currentGeneration
     }
 }
 
@@ -235,10 +370,18 @@ enum AppleMusicFormatPolicy {
     }
 
     static func shouldReplaceCachedFormat(
-        currentIsDolbyAtmos: Bool,
-        incomingIsDolbyAtmos: Bool
+        currentIsPriorityFormat: Bool,
+        incomingIsPriorityFormat: Bool
     ) -> Bool {
-        !currentIsDolbyAtmos || incomingIsDolbyAtmos
+        !currentIsPriorityFormat || incomingIsPriorityFormat
+    }
+
+    static func bitDepthEvidence(
+        formatEvidence: CMPlayerStats?,
+        fallbackEvidence: CMPlayerStats?,
+        decoderEvidence: CMPlayerStats? = nil
+    ) -> Int? {
+        formatEvidence?.bitDepth ?? decoderEvidence?.bitDepth ?? fallbackEvidence?.bitDepth
     }
 }
 

@@ -15,11 +15,42 @@ final class AppleMusicService {
         let sampleRate: Double?
     }
 
+    private enum PlaybackStateReadResult {
+        case playing(sampleRate: Double?)
+        case notPlaying
+        case unavailable
+
+        var playbackState: PlaybackState? {
+            switch self {
+            case .playing(let sampleRate):
+                return PlaybackState(isPlaying: true, sampleRate: sampleRate)
+            case .notPlaying:
+                return PlaybackState(isPlaying: false, sampleRate: nil)
+            case .unavailable:
+                return nil
+            }
+        }
+
+        var sampleRateQueryResult: AppleMusicSampleRateQueryResult {
+            switch self {
+            case .playing(let sampleRate):
+                if let sampleRate {
+                    return .sampleRate(sampleRate)
+                }
+                return .missingValue
+            case .notPlaying:
+                return .notPlaying
+            case .unavailable:
+                return .unavailable
+            }
+        }
+    }
+
     private var lastAppliedEQPreset: String?
     private let eqLock = NSLock()
     private let playbackQueue = DispatchQueue(label: "AppleMusicService.playback", qos: .userInitiated)
-    private var cachedPlaybackState: (state: PlaybackState?, date: Date)?
-    private static let playbackCacheTTL: TimeInterval = 0.5
+    private var cachedPlaybackState: (result: PlaybackStateReadResult, date: Date)?
+    private static let playbackCacheTTL: TimeInterval = 0.25
 
     var isRunning: Bool {
         NSWorkspace.shared.runningApplications.contains {
@@ -30,52 +61,83 @@ final class AppleMusicService {
     func fetchPlaybackState(completion: @escaping (PlaybackState?) -> Void) {
         playbackQueue.async { [weak self] in
             guard let self else { return }
-            if let cachedPlaybackState,
-               Date().timeIntervalSince(cachedPlaybackState.date) < Self.playbackCacheTTL {
-                completion(cachedPlaybackState.state)
-                return
-            }
-
-            let state = self.readPlaybackState()
-            self.cachedPlaybackState = (state, Date())
-            completion(state)
+            completion(self.playbackStateReadResult().playbackState)
         }
     }
 
-    private func readPlaybackState() -> PlaybackState? {
+    /// Reads Apple Music's current track sample rate. A missing rate is distinct
+    /// from a stopped player or an unavailable/permission-denied AppleScript API.
+    func fetchCurrentTrackSampleRate(completion: @escaping (AppleMusicSampleRateQueryResult) -> Void) {
+        playbackQueue.async { [weak self] in
+            guard let self else { return }
+            completion(self.playbackStateReadResult().sampleRateQueryResult)
+        }
+    }
+
+    /// Prevents a cached response from the previous track from being reused by
+    /// the next sample-rate request. Queue ordering makes invalidation precede
+    /// any request enqueued after a MediaRemote track-change event.
+    func invalidatePlaybackStateCache() {
+        playbackQueue.async { [weak self] in
+            self?.cachedPlaybackState = nil
+        }
+    }
+
+    private func playbackStateReadResult() -> PlaybackStateReadResult {
+        if let cachedPlaybackState,
+           Date().timeIntervalSince(cachedPlaybackState.date) < Self.playbackCacheTTL {
+            return cachedPlaybackState.result
+        }
+
+        let result = readPlaybackState()
+        cachedPlaybackState = (result, Date())
+        return result
+    }
+
+    private func readPlaybackState() -> PlaybackStateReadResult {
         let script = """
         tell application "Music"
             if player state is playing then
-                return (sample rate of current track) as string
+                set currentRate to sample rate of current track
+                if currentRate is missing value then return "missing value"
+                return currentRate as string
             end if
-            return ""
+            return "not playing"
         end tell
         """
-        guard let output = execute(script, logPrefix: "[AM state]") else { return nil }
-        if output.isEmpty { return PlaybackState(isPlaying: false, sampleRate: nil) }
-        if output == "missing value" { return PlaybackState(isPlaying: true, sampleRate: nil) }
-        return PlaybackState(isPlaying: true, sampleRate: Double(output))
+        guard let output = execute(script, logPrefix: "[AM state]") else { return .unavailable }
+        let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty || value == "not playing" { return .notPlaying }
+        if value == "missing value" { return .playing(sampleRate: nil) }
+        guard let sampleRate = Double(value),
+              sampleRate.isFinite,
+              sampleRate > 0,
+              sampleRate <= RateSwitchingPolicy.maxPlausibleSampleRate else {
+            RateSyncLog.switching.info("[AM state] unavailable: invalid sample rate result")
+            return .unavailable
+        }
+        return .playing(sampleRate: sampleRate)
     }
 
     func applyEQIfNeeded(isEnabled: Bool, isCurrentSource: Bool) {
         guard isEnabled else {
-            Logger.switching.info("[EQ] skipped: switch off")
+            RateSyncLog.switching.info("[EQ] skipped: switch off")
             return
         }
         guard isCurrentSource else {
-            Logger.switching.info("[EQ] skipped: source is not Apple Music")
+            RateSyncLog.switching.info("[EQ] skipped: source is not Apple Music")
             return
         }
         guard isRunning else {
-            Logger.switching.info("[EQ] skipped: Music is not running")
+            RateSyncLog.switching.info("[EQ] skipped: Music is not running")
             return
         }
         guard let genre = currentGenre() else {
-            Logger.switching.info("[EQ] skipped: no genre")
+            RateSyncLog.switching.info("[EQ] skipped: no genre")
             return
         }
         guard let preset = Self.eqPreset(forGenre: genre) else {
-            Logger.switching.info("[EQ] skipped: genre \(genre, privacy: .public) maps to no preset")
+            RateSyncLog.switching.info("[EQ] skipped: genre \(genre, privacy: .public) maps to no preset")
             return
         }
 
@@ -87,10 +149,10 @@ final class AppleMusicService {
         eqLock.unlock()
 
         guard !unchanged else {
-            Logger.switching.info("[EQ] skipped: preset \(preset, privacy: .public) already applied")
+            RateSyncLog.switching.info("[EQ] skipped: preset \(preset, privacy: .public) already applied")
             return
         }
-        Logger.switching.info("[EQ] genre \(genre, privacy: .public) -> preset \(preset, privacy: .public)")
+        RateSyncLog.switching.info("[EQ] genre \(genre, privacy: .public) -> preset \(preset, privacy: .public)")
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             setEQ(preset)
         }
@@ -156,11 +218,11 @@ final class AppleMusicService {
             "原声", "R&B", "钢琴曲", "诵读音乐", "拉丁音乐", "平缓"
         ]
         guard allowedPresets.contains(preset) else {
-            Logger.switching.error("[EQ] rejected non-allowlisted preset \(preset, privacy: .public)")
+            RateSyncLog.switching.error("[EQ] rejected non-allowlisted preset \(preset, privacy: .public)")
             return
         }
 
-        Logger.switching.info("[EQ] accessibility trusted: \(AXIsProcessTrusted(), privacy: .public)")
+        RateSyncLog.switching.info("[EQ] accessibility trusted: \(AXIsProcessTrusted(), privacy: .public)")
         let previousFrontmost = NSWorkspace.shared.frontmostApplication
         let script = """
         tell application "Music" to activate
@@ -192,7 +254,7 @@ final class AppleMusicService {
         var error: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&error)
         if let error {
-            Logger.switching.info("[EQ] failed: \(String(describing: error), privacy: .public)")
+            RateSyncLog.switching.info("[EQ] failed: \(String(describing: error), privacy: .public)")
         }
         if let previousFrontmost {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -205,12 +267,12 @@ final class AppleMusicService {
         var error: NSDictionary?
         guard let output = NSAppleScript(source: source)?.executeAndReturnError(&error).stringValue else {
             if let error {
-                Logger.switching.info("\(logPrefix) error: \(String(describing: error), privacy: .public)")
+                RateSyncLog.switching.info("\(logPrefix) error: \(String(describing: error), privacy: .public)")
             }
             return nil
         }
         if let error {
-            Logger.switching.info("\(logPrefix) error: \(String(describing: error), privacy: .public)")
+            RateSyncLog.switching.info("\(logPrefix) error: \(String(describing: error), privacy: .public)")
         }
         return output
     }

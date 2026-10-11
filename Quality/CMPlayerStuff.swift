@@ -15,30 +15,41 @@ struct CMPlayerStats {
     let date: Date
     let isAppleMusicFormat: Bool
     let isDolbyAtmos: Bool
+    let isSpatialAudio: Bool
+
+    var isPriorityAppleMusicFormat: Bool {
+        isDolbyAtmos || isSpatialAudio
+    }
 
     init(
         sampleRate: Double,
         bitDepth: Int?,
         date: Date,
         isAppleMusicFormat: Bool = false,
-        isDolbyAtmos: Bool = false
+        isDolbyAtmos: Bool = false,
+        isSpatialAudio: Bool = false
     ) {
         self.sampleRate = sampleRate
         self.bitDepth = bitDepth
         self.date = date
         self.isAppleMusicFormat = isAppleMusicFormat
         self.isDolbyAtmos = isDolbyAtmos
+        self.isSpatialAudio = isSpatialAudio
     }
 
-    static func sampleRateOnly(sampleRate: Double, date: Date = Date()) -> CMPlayerStats {
-        CMPlayerStats(sampleRate: sampleRate, bitDepth: nil, date: date)
+    static func sampleRateOnly(
+        sampleRate: Double,
+        bitDepth: Int? = nil,
+        date: Date = Date()
+    ) -> CMPlayerStats {
+        CMPlayerStats(sampleRate: sampleRate, bitDepth: bitDepth, date: date)
     }
 }
 
 extension CMPlayerStats: CustomStringConvertible {
     var description: String {
         let bitDepthDescription = bitDepth.map { String($0) } ?? "unknown"
-        return "CMPlayerStats(sampleRate: \(sampleRate), bitDepth: \(bitDepthDescription), appleMusicFormat: \(isAppleMusicFormat), dolbyAtmos: \(isDolbyAtmos))"
+        return "CMPlayerStats(sampleRate: \(sampleRate), bitDepth: \(bitDepthDescription), appleMusicFormat: \(isAppleMusicFormat), dolbyAtmos: \(isDolbyAtmos), spatialAudio: \(isSpatialAudio))"
     }
 }
 
@@ -51,7 +62,8 @@ class CMPlayerParser {
                 bitDepth: evidence.bitDepth,
                 date: evidence.date,
                 isAppleMusicFormat: true,
-                isDolbyAtmos: evidence.isDolbyAtmos
+                isDolbyAtmos: evidence.isDolbyAtmos,
+                isSpatialAudio: evidence.isSpatialAudio
             )
         }
         return highLevelStats + parseCoreAudioConsoleLogs(entries)
@@ -92,7 +104,7 @@ class CMPlayerParser {
                 stats.append(stat)
                 sampleRate = nil
                 bitDepth = nil
-                Logger.switching.info("detected stat \(stat)")
+                RateSyncLog.switching.info("detected stat \(stat)")
                 break
             }
             
@@ -159,7 +171,7 @@ class CMPlayerParser {
                 stats.append(stat)
                 sampleRate = nil
                 bitDepth = nil
-                Logger.switching.info("detected audioqueue stat \(stat)")
+                RateSyncLog.switching.info("detected audioqueue stat \(stat)")
                 break
             }
 

@@ -4,19 +4,49 @@
 # 自动 patch macos-alias：修复 APFS 挂载卷 getVolumeName() 返回空串、
 # 导致 .DS_Store 中 backgroundImageAlias 卷名为空、Finder 背景不显示的问题。
 # 用法：./make-dmg-losslessswitcher.sh [输出.dmg 路径]（默认工程目录 RateSync-3.0.dmg）
+# 测试包（跳过签名或公证）默认启用本地诊断日志；正式 Release 默认关闭。
+# 可通过 RATESYNC_LOCAL_DIAGNOSTIC_LOG=0/1 覆盖测试包的默认值。
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="RateSync"
 VERSION="3.2.7"
 BUILD="38"
+BUILD_CONFIGURATION="${RATESYNC_BUILD_CONFIGURATION:-Release}"
 OUT="${1:-$PROJ_DIR/RateSync-$VERSION.dmg}"
+
+if [[ "$BUILD_CONFIGURATION" != "Debug" && "$BUILD_CONFIGURATION" != "Release" ]]; then
+    echo "==> 错误：RATESYNC_BUILD_CONFIGURATION 只能是 Debug 或 Release" >&2
+    exit 1
+fi
+
+SIGN_IDENTITY="${RATESYNC_SIGN_IDENTITY:-}"
+SKIP_SIGNING="${RATESYNC_SKIP_SIGNING:-0}"
+NOTARY_PROFILE="${RATESYNC_NOTARY_PROFILE:-}"
+SKIP_NOTARIZATION="${RATESYNC_SKIP_NOTARIZATION:-0}"
+IS_TEST_PACKAGE=0
+if [[ "$SKIP_SIGNING" == "1" || "$SKIP_NOTARIZATION" == "1" ]]; then
+    IS_TEST_PACKAGE=1
+fi
+if [[ "${RATESYNC_LOCAL_DIAGNOSTIC_LOG+x}" == "x" ]]; then
+    LOCAL_DIAGNOSTIC_LOG="$RATESYNC_LOCAL_DIAGNOSTIC_LOG"
+else
+    LOCAL_DIAGNOSTIC_LOG="$IS_TEST_PACKAGE"
+fi
+if [[ "$LOCAL_DIAGNOSTIC_LOG" != "0" && "$LOCAL_DIAGNOSTIC_LOG" != "1" ]]; then
+    echo "==> 错误：RATESYNC_LOCAL_DIAGNOSTIC_LOG 只能是 0 或 1" >&2
+    exit 1
+fi
+if [[ "$LOCAL_DIAGNOSTIC_LOG" == "1" && "$IS_TEST_PACKAGE" != "1" ]]; then
+    echo "==> 错误：本地诊断文件日志只能用于测试构建（跳过签名或公证）" >&2
+    exit 1
+fi
 
 BUILD_STAGING="$(mktemp -d /tmp/lossless-dragdrop-build-XXXXXX)"
 trap 'rm -rf "$BUILD_STAGING"' EXIT
 
 APP="$BUILD_STAGING/Applications/$APP_NAME.app"
-BUILD_PRODUCT="$BUILD_STAGING/DerivedData/Build/Products/Release/$APP_NAME.app"
+BUILD_PRODUCT="$BUILD_STAGING/DerivedData/Build/Products/$BUILD_CONFIGURATION/$APP_NAME.app"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 # create-dmg 必须来自显式指定或工程内的受信任目录，避免执行固定用户目录下的依赖。
@@ -31,13 +61,24 @@ if [[ ! -d "$SOURCE_PACKAGES_DIR" ]]; then
     exit 1
 fi
 
-# ---- 1. 构建 App（Release，staging，不触碰本机 /Applications）----
-echo "==> 构建 ${APP_NAME}（Release）到 staging"
+# ---- 1. 构建 App（staging，不触碰本机 /Applications）----
+echo "==> 构建 ${APP_NAME}（${BUILD_CONFIGURATION}）到 staging"
 mkdir -p "$BUILD_STAGING/Applications"
-xcodebuild -project "$PROJ_DIR/Quality.xcodeproj" -scheme RateSync -configuration Release \
-  -derivedDataPath "$BUILD_STAGING/DerivedData" \
-  -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-  CODE_SIGNING_ALLOWED=NO -disableAutomaticPackageResolution build > "$BUILD_STAGING/build.log" 2>&1
+if [[ "$LOCAL_DIAGNOSTIC_LOG" == "1" ]]; then
+    echo "==> 本地诊断文件日志已启用（本地测试包）"
+    xcodebuild -project "$PROJ_DIR/Quality.xcodeproj" -scheme RateSync -configuration "$BUILD_CONFIGURATION" \
+      -derivedDataPath "$BUILD_STAGING/DerivedData" \
+      -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+      'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) RATESYNC_LOCAL_DIAGNOSTIC_LOG' \
+      CODE_SIGNING_ALLOWED=NO -disableAutomaticPackageResolution build > "$BUILD_STAGING/build.log" 2>&1
+else
+    echo "==> 本地诊断文件日志已关闭"
+    xcodebuild -project "$PROJ_DIR/Quality.xcodeproj" -scheme RateSync -configuration "$BUILD_CONFIGURATION" \
+      -derivedDataPath "$BUILD_STAGING/DerivedData" \
+      -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+      'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited)' \
+      CODE_SIGNING_ALLOWED=NO -disableAutomaticPackageResolution build > "$BUILD_STAGING/build.log" 2>&1
+fi
 if [[ -x "$LSREGISTER" ]]; then
     "$LSREGISTER" -u "$BUILD_PRODUCT" >/dev/null 2>&1 || true
 fi
@@ -54,10 +95,6 @@ fi
 # 都会失效（表现为"每次重启权限都掉"）。使用固定的自签名证书签名后，
 # 授权按证书身份 + bundle id 记录，重新构建/更新不再丢失。
 # 发布签名必须显式指定；本地测试可用 RATESYNC_SKIP_SIGNING=1 生成带 entitlement 的 ad-hoc DMG。
-SIGN_IDENTITY="${RATESYNC_SIGN_IDENTITY:-}"
-SKIP_SIGNING="${RATESYNC_SKIP_SIGNING:-0}"
-NOTARY_PROFILE="${RATESYNC_NOTARY_PROFILE:-}"
-SKIP_NOTARIZATION="${RATESYNC_SKIP_NOTARIZATION:-0}"
 WIDGET_EXTENSION="$APP/Contents/PlugIns/RateSyncWidget.appex"
 
 if [[ ! -d "$WIDGET_EXTENSION" ]]; then
@@ -67,6 +104,7 @@ fi
 
 sign_nested_code() {
     local codesign_args=("$@")
+    local embedded_dylib
     if [[ -d "$APP/Contents/Frameworks" ]]; then
         # Sign every nested Mach-O first (Sparkle includes Autoupdate, Updater,
         # and XPC helpers), then sign the framework bundles from the inside out.
@@ -85,6 +123,59 @@ sign_nested_code() {
             }
         done < <(find "$APP/Contents/Frameworks" -depth -type d -name "*.framework" -print0)
     fi
+
+    # Xcode's Debug configuration may place RateSync.debug.dylib beside the
+    # main executable. It is not inside a framework bundle, so sign it with
+    # the same identity before signing the outer app.
+    if [[ -d "$APP/Contents/MacOS" ]]; then
+        while IFS= read -r -d "" embedded_dylib; do
+            if file "$embedded_dylib" | rg -q "Mach-O"; then
+                codesign --force "${codesign_args[@]}" "$embedded_dylib" || {
+                    echo "==> 错误：App 内动态库签名失败：$embedded_dylib" >&2
+                    exit 1
+                }
+            fi
+        done < <(find "$APP/Contents/MacOS" -maxdepth 1 -type f -name "*.dylib" -print0)
+    fi
+}
+
+sign_widget_nested_code() {
+    local codesign_args=("$@")
+    local embedded_dylib
+    if [[ -d "$WIDGET_EXTENSION/Contents/MacOS" ]]; then
+        # Debug builds place the widget dylibs beside the widget executable.
+        # They must use the same signing identity as the outer appex or
+        # WidgetKit will reject the extension at launch time.
+        while IFS= read -r -d "" embedded_dylib; do
+            if file "$embedded_dylib" | rg -q "Mach-O"; then
+                codesign --force "${codesign_args[@]}" "$embedded_dylib" || {
+                    echo "==> 错误：Widget 内动态库签名失败：$embedded_dylib" >&2
+                    exit 1
+                }
+            fi
+        done < <(find "$WIDGET_EXTENSION/Contents/MacOS" -maxdepth 1 -type f -name "*.dylib" -print0)
+    fi
+}
+
+verify_macos_dylib_team_identifiers() {
+    local app_path="$1"
+    local app_team dylib_team embedded_dylib
+    app_team="$(codesign -dv --verbose=4 "$app_path" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+    if [[ -z "$app_team" ]]; then
+        echo "==> 错误：无法读取 App 的 Team ID：$app_path" >&2
+        exit 1
+    fi
+
+    while IFS= read -r -d "" embedded_dylib; do
+        if ! file "$embedded_dylib" | rg -q "Mach-O"; then
+            continue
+        fi
+        dylib_team="$(codesign -dv --verbose=4 "$embedded_dylib" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+        if [[ "$dylib_team" != "$app_team" ]]; then
+            echo "==> 错误：动态库 Team ID 与 App 不一致：$embedded_dylib（${dylib_team:-缺失} != $app_team）" >&2
+            exit 1
+        fi
+    done < <(find "$app_path/Contents/MacOS" -maxdepth 1 -type f -name "*.dylib" -print0)
 }
 
 verify_entitlement_value() {
@@ -99,12 +190,15 @@ verify_entitlement_value() {
 if [[ "$SKIP_SIGNING" == "1" ]]; then
     echo "==> 本机测试签名 ${APP_NAME}（ad-hoc，保留 WidgetKit entitlement）"
     sign_nested_code --sign -
+    sign_widget_nested_code --sign -
     codesign --force --sign - \
         --entitlements "$PROJ_DIR/RateSyncWidget/RateSyncWidget.entitlements" \
         "$WIDGET_EXTENSION" || { echo "==> 错误：Widget 扩展本机签名失败" >&2; exit 1; }
     codesign --force --sign - \
         --entitlements "$PROJ_DIR/Quality/Quality.entitlements" \
         "$APP" || { echo "==> 错误：App 本机签名失败" >&2; exit 1; }
+    verify_macos_dylib_team_identifiers "$APP"
+    verify_macos_dylib_team_identifiers "$WIDGET_EXTENSION"
     verify_entitlement_value "$WIDGET_EXTENSION" "[Key] com.apple.security.app-sandbox"
     codesign --verify --deep --strict "$APP"
 else
@@ -126,12 +220,15 @@ else
     fi
     echo "==> 证书签名 ${APP_NAME}（身份：${SIGN_IDENTITY}）"
     sign_nested_code --options runtime --timestamp -s "$SIGN_IDENTITY"
+    sign_widget_nested_code --options runtime --timestamp -s "$SIGN_IDENTITY"
     codesign --force --options runtime --timestamp -s "$SIGN_IDENTITY" \
         --entitlements "$PROJ_DIR/RateSyncWidget/RateSyncWidget.entitlements" \
         "$WIDGET_EXTENSION" || { echo "==> 错误：Widget 扩展签名失败" >&2; exit 1; }
     codesign --force --options runtime --timestamp -s "$SIGN_IDENTITY" \
         --entitlements "$PROJ_DIR/Quality/Quality.entitlements" \
         "$APP" || { echo "==> 错误：App 签名失败" >&2; exit 1; }
+    verify_macos_dylib_team_identifiers "$APP"
+    verify_macos_dylib_team_identifiers "$WIDGET_EXTENSION"
     codesign -dv "$APP" 2>&1 | grep -E "Signature|Authority" | head -3
     verify_entitlement_value "$WIDGET_EXTENSION" "[Key] com.apple.security.app-sandbox"
     codesign --verify --deep --strict "$APP"
@@ -216,6 +313,8 @@ verify_packaged_app() {
         fi
 
         codesign --verify --deep --strict "$packaged_app"
+        verify_macos_dylib_team_identifiers "$packaged_app"
+        verify_macos_dylib_team_identifiers "$packaged_widget"
         verify_entitlement_value "$packaged_widget" "[Key] com.apple.security.app-sandbox"
         echo "==> DMG 内 App 与 Widget 签名校验通过"
     )

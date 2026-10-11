@@ -81,6 +81,29 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertTrue(stat?.isDolbyAtmos == true)
     }
 
+    func testAppleMusicParserPrefersActiveSpatialAudioRateOverNewerLosslessLog() {
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 107),
+                message: "play> cm>> mediaFormatinfo '<private>' , asbdFormatID = qlac, lossless, asbdNumChannels = 2, asbdSampleRate = 44.1 kHz, is not rendering spatial audio"
+            ),
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 105),
+                message: "play> cm>> mediaFormatinfo '<private>' , audioCapabilities: 0x0 -> 0x8, asbdFormatID = qaac, stereo (lossy), asbdNumChannels = 2, asbdSampleRate = 48.0 kHz, is binaural, is rendering spatial audio"
+            )
+        ]
+
+        let stat = CMPlayerParser.parseAppleMusicConsoleLogs(entries).first
+
+        XCTAssertEqual(
+            stat?.sampleRate,
+            48_000,
+            "A delayed active spatial-audio line must outrank a nearby 44.1 kHz lossless log."
+        )
+        XCTAssertTrue(stat?.isSpatialAudio == true)
+        XCTAssertFalse(stat?.isDolbyAtmos == true, "A spatial-rendering marker alone must not be mislabeled as explicit Atmos metadata.")
+    }
+
     func testAppleMusicParserUsesHighLevelLosslessFormatBeforeDecoderLog() {
         let entries = [
             AppleMusicLogEntry(
@@ -194,6 +217,211 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(policy.lockedOverride, 2.0, accuracy: 0.001)
     }
 
+    func testAppleMusicCurrentTrackScriptUsesStandardStabilityGate() {
+        let policy = RateSwitchingPolicy.gatePolicy(for: .appleMusicCurrentTrack)
+
+        XCTAssertEqual(policy.boundary, RateGatePolicy.standard.boundary, accuracy: 0.001)
+        XCTAssertEqual(policy.stability, RateGatePolicy.standard.stability, accuracy: 0.001)
+        XCTAssertEqual(policy.lockedOverride, RateGatePolicy.standard.lockedOverride, accuracy: 0.001)
+    }
+
+    func testAppleMusicMissingScriptRateRetriesUntilSixSecondDeadline() {
+        XCTAssertEqual(
+            AppleMusicSampleRatePolicy.resolution(for: .missingValue, elapsed: 0),
+            .retry(after: 0.5)
+        )
+        guard case .retry(let retryDelay) = AppleMusicSampleRatePolicy.resolution(
+            for: .missingValue,
+            elapsed: 5.8
+        ) else {
+            return XCTFail("A missing value before the deadline should schedule the final retry.")
+        }
+        XCTAssertEqual(retryDelay, 0.2, accuracy: 0.001)
+        XCTAssertEqual(
+            AppleMusicSampleRatePolicy.resolution(for: .missingValue, elapsed: 6.0),
+            .fallbackToLogs
+        )
+    }
+
+    func testAppleMusicScriptRateAppliesWithoutBitDepthEvidence() {
+        XCTAssertEqual(
+            AppleMusicSampleRatePolicy.resolution(for: .sampleRate(96_000), elapsed: 0),
+            .apply(96_000)
+        )
+        XCTAssertEqual(
+            AppleMusicSampleRatePolicy.resolution(for: .sampleRate(.nan), elapsed: 0),
+            .fallbackToLogs
+        )
+    }
+
+    func testAppleMusicFormatProbeRetriesAfterMissUntilSixSecondDeadline() {
+        XCTAssertEqual(
+            AppleMusicFormatProbePolicy.retryDelay(after: 2.0, hasPriorityEvidence: false),
+            0.5
+        )
+        XCTAssertEqual(
+            AppleMusicFormatProbePolicy.retryDelay(after: 5.8, hasPriorityEvidence: false) ?? -1,
+            0.2,
+            accuracy: 0.001
+        )
+        XCTAssertNil(AppleMusicFormatProbePolicy.retryDelay(after: 6.0, hasPriorityEvidence: false))
+        XCTAssertNil(AppleMusicFormatProbePolicy.retryDelay(after: 2.0, hasPriorityEvidence: true))
+    }
+
+    func testAppleMusicValidTrackRateIsNotHeldForAtmosProbe() {
+        XCTAssertEqual(
+            AppleMusicCurrentTrackRatePolicy.action(
+                hasCurrentTrackRate: true,
+                hasPriorityEvidence: false,
+                atmosProbeCompleted: false
+            ),
+            .applyCurrentTrackRate,
+            "A valid AppleScript rate must enter the stability gate while Atmos logs continue probing."
+        )
+    }
+
+    func testAppleMusicPriorityFormatWinsOverCurrentTrackRate() {
+        XCTAssertEqual(
+            AppleMusicCurrentTrackRatePolicy.action(
+                hasCurrentTrackRate: true,
+                hasPriorityEvidence: true,
+                atmosProbeCompleted: false
+            ),
+            .applyPriorityFormat
+        )
+    }
+
+    func testAppleMusicScriptUnavailableFallsBackImmediatelyAndStoppedPlaybackDoesNotUseLogs() {
+        XCTAssertEqual(
+            AppleMusicSampleRatePolicy.resolution(for: .unavailable, elapsed: 0.1),
+            .fallbackToLogs
+        )
+        XCTAssertEqual(
+            AppleMusicSampleRatePolicy.resolution(for: .notPlaying, elapsed: 0.1),
+            .noPlayback
+        )
+    }
+
+    func testAppleMusicNoPlaybackSchedulesAResumeCheckWhileTrackIsRetained() {
+        XCTAssertEqual(
+            AppleMusicPlaybackRecoveryPolicy.retryDelay(hasCurrentTrack: true),
+            3.0,
+            "A pause must not permanently terminate sampling for a retained Now Playing track."
+        )
+        XCTAssertNil(AppleMusicPlaybackRecoveryPolicy.retryDelay(hasCurrentTrack: false))
+    }
+
+    func testAppleMusicAtmosProbeCanRefreshAfterInitialGenerationCompletes() {
+        let completedAt = Date(timeIntervalSince1970: 1_000)
+
+        XCTAssertFalse(
+            AppleMusicFormatProbePolicy.shouldSchedule(
+                generation: 4,
+                scheduledGeneration: nil,
+                completedGeneration: 4,
+                lastCompletedAt: completedAt,
+                now: completedAt.addingTimeInterval(0.5)
+            )
+        )
+        XCTAssertTrue(
+            AppleMusicFormatProbePolicy.shouldSchedule(
+                generation: 4,
+                scheduledGeneration: nil,
+                completedGeneration: 4,
+                lastCompletedAt: completedAt,
+                now: completedAt.addingTimeInterval(1.5)
+            ),
+            "A later log line must be eligible for a follow-up Atmos scan."
+        )
+    }
+
+    func testAppleMusicCurrentTrackRateRetainsLosslessBitDepthEvidence() {
+        let evidence = CMPlayerStats(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            date: Date(timeIntervalSince1970: 1_001),
+            isAppleMusicFormat: true
+        )
+
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.bitDepthEvidence(
+                formatEvidence: evidence,
+                fallbackEvidence: nil
+            ),
+            16,
+            "AppleScript supplies the rate, but the parsed lossless evidence still supplies bit depth."
+        )
+    }
+
+    func testAppleMusicCurrentTrackRateRevalidatesAfterSettlingDelay() {
+        let queriedAt = Date(timeIntervalSince1970: 2_000)
+
+        XCTAssertFalse(
+            AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+                lastQueriedAt: queriedAt,
+                now: queriedAt.addingTimeInterval(0.5)
+            )
+        )
+        XCTAssertTrue(
+            AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+                lastQueriedAt: queriedAt,
+                now: queriedAt.addingTimeInterval(2.0)
+            ),
+            "Music may report a temporary 44.1 kHz value while a high-resolution track is loading."
+        )
+        XCTAssertTrue(
+            AppleMusicCurrentTrackRatePolicy.shouldRevalidate(lastQueriedAt: nil, now: queriedAt)
+        )
+    }
+
+    func testAppleMusicTimeoutDoesNotReplaceKnownScriptRateWithLogEvidence() {
+        XCTAssertTrue(
+            AppleMusicCurrentTrackRatePolicy.shouldPreserveCurrentTrackRateOnFallback(
+                hasKnownCurrentTrackRate: true
+            ),
+            "A timeout during same-track revalidation must preserve the last valid AppleScript rate."
+        )
+        XCTAssertFalse(
+            AppleMusicCurrentTrackRatePolicy.shouldPreserveCurrentTrackRateOnFallback(
+                hasKnownCurrentTrackRate: false
+            ),
+            "Log fallback is allowed only when AppleScript never supplied a valid rate for this track."
+        )
+    }
+
+    func testStaleAppleMusicQueryCannotFinishNewSameTrackRequest() {
+        XCTAssertTrue(
+            AppleMusicSampleRateQueryPolicy.isCurrent(expectedQueryID: 12, currentQueryID: 12)
+        )
+        XCTAssertFalse(
+            AppleMusicSampleRateQueryPolicy.isCurrent(expectedQueryID: 11, currentQueryID: 12),
+            "An old timeout must not end a newer AppleScript query for the same track and playback generation."
+        )
+    }
+
+    func testAppleMusicCurrentTrackRateUsesDecoderBitDepthEvidence() {
+        let decoderEvidence = CMPlayerStats(
+            sampleRate: 96_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 1_002)
+        )
+
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.bitDepthEvidence(
+                formatEvidence: nil,
+                fallbackEvidence: nil,
+                decoderEvidence: decoderEvidence
+            ),
+            24,
+            "The AppleScript rate path must retain explicit bit depth parsed from the decoder log."
+        )
+    }
+
+    func testStalePlaybackGenerationCannotApplyAfterTheSameTrackResumes() {
+        XCTAssertTrue(TrackRequestPolicy.isCurrent(expectedGeneration: 7, currentGeneration: 7))
+        XCTAssertFalse(TrackRequestPolicy.isCurrent(expectedGeneration: 7, currentGeneration: 8))
+    }
+
     func testAppleMusicEvidenceWindowRetainsDelayedDolbyFormat() {
         let atmosphericDate = Date(timeIntervalSince1970: 100)
         let losslessDate = Date(timeIntervalSince1970: 107)
@@ -226,14 +454,14 @@ final class SwitchingSupportTests: XCTestCase {
         )
         XCTAssertFalse(
             AppleMusicFormatPolicy.shouldReplaceCachedFormat(
-                currentIsDolbyAtmos: true,
-                incomingIsDolbyAtmos: false
+                currentIsPriorityFormat: true,
+                incomingIsPriorityFormat: false
             )
         )
         XCTAssertTrue(
             AppleMusicFormatPolicy.shouldReplaceCachedFormat(
-                currentIsDolbyAtmos: false,
-                incomingIsDolbyAtmos: true
+                currentIsPriorityFormat: false,
+                incomingIsPriorityFormat: true
             )
         )
     }
@@ -691,4 +919,5 @@ final class SwitchingSupportTests: XCTestCase {
             "Player priority rows must show the player name instead of only the order number."
         )
     }
+
 }

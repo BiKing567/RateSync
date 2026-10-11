@@ -36,8 +36,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.instance = self
+        if RateSyncDiagnosticLogging.localFileEnabled {
+            _ = LocalDiagnosticLog.shared
+        }
         outputDevices = MenuBarController.shared.outputDevices
         
         checkPermissions()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if RateSyncDiagnosticLogging.localFileEnabled {
+            LocalDiagnosticLog.shared.flush()
+        }
     }
 }

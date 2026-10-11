@@ -65,7 +65,7 @@ class MediaRemoteController {
                 guard source.bundleIdentifier == lock.bundleIdentifier else {
                     self.resetStateOnQueue()
                     outputDevices?.clearNowPlayingTrack()
-                    Logger.switching.info("[Takeover] cleared \(source.bundleIdentifier ?? "unknown", privacy: .public): source lock is active")
+                    RateSyncLog.switching.info("[Takeover] cleared \(source.bundleIdentifier ?? "unknown", privacy: .public): source lock is active")
                     return
                 }
                 self.deliver(trackInfo, source: source, receivedAt: Date(), outputDevices: outputDevices)
@@ -82,7 +82,7 @@ class MediaRemoteController {
                     return
                 case .ignore:
                     self.resetStateOnQueue()
-                    Logger.switching.info("[Takeover] ignored \(source.bundleIdentifier ?? "unknown", privacy: .public): not monitored source")
+                    RateSyncLog.switching.info("[Takeover] ignored \(source.bundleIdentifier ?? "unknown", privacy: .public): not monitored source")
                     return
                 }
             }
@@ -135,7 +135,7 @@ class MediaRemoteController {
                         priority: priority
                     )
                     guard shouldAccept else {
-                        Logger.switching.info("[Takeover] ignored \(source.bundleIdentifier ?? "unknown", privacy: .public): lower priority source is still active")
+                        RateSyncLog.switching.info("[Takeover] ignored \(source.bundleIdentifier ?? "unknown", privacy: .public): lower priority source is still active")
                         return
                     }
                     self.deliver(trackInfo, source: source, receivedAt: receivedAt, outputDevices: outputDevices)
@@ -159,7 +159,7 @@ class MediaRemoteController {
         lastDeliveredTrack = trackInfo
         lastDeliveredAt = receivedAt
         currentSource = source
-        Logger.switching.info("[Takeover] accepted \(trackInfo.payload.uniqueIdentifier) from \(source.bundleIdentifier ?? "unknown", privacy: .public)")
+        RateSyncLog.switching.info("[Takeover] accepted \(trackInfo.payload.uniqueIdentifier) from \(source.bundleIdentifier ?? "unknown", privacy: .public)")
         outputDevices?.trackDidChange(trackInfo, eventDate: receivedAt)
     }
 

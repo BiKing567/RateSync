@@ -9,12 +9,6 @@
 @preconcurrency import OSLog
 import Cocoa
 
-/// Central logging for the sample-rate switching pipeline. Visible via
-/// `log stream --predicate 'subsystem == "com.biking.RateSync"'`
-extension Logger {
-    static let switching = Logger(subsystem: "com.biking.RateSync", category: "switching")
-}
-
 struct SimpleConsole {
     let date: Date
     let message: String
@@ -40,7 +34,7 @@ class Console {
         for entry in entries {
             if let logEntry = entry as? OSLogEntryLog {
                 if !isTrustedLogEntry(logEntry, expectedProcess: process) {
-                    Logger.switching.info("[LogVerify] dropped untrusted entry pid=\(logEntry.processIdentifier, privacy: .public) process=\(logEntry.process, privacy: .public)")
+                    RateSyncLog.switching.info("[LogVerify] dropped untrusted entry pid=\(logEntry.processIdentifier, privacy: .public) process=\(logEntry.process, privacy: .public)")
                     continue
                 }
             }

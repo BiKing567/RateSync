@@ -22,6 +22,8 @@ private enum RateSyncWidgetStyle {
     static let mediumMetadataSpacing: CGFloat = 14
     static let mediumTitleArtistSpacing: CGFloat = 2
     static let mediumSectionSpacing: CGFloat = 8
+    static let mediumDividerHeight: CGFloat = 1
+    static let mediumDividerOpacity: CGFloat = 0.48
     static let mediumTitleFontSize: CGFloat = 24
     static let mediumArtistFontSize: CGFloat = 16
     static let mediumSampleRateFontSize: CGFloat = 27
@@ -407,8 +409,9 @@ struct RateSyncWidgetView: View {
                     Spacer(minLength: RateSyncWidgetStyle.mediumSectionSpacing)
 
                     Rectangle()
-                        .fill(Color.primary.opacity(0.14))
-                        .frame(height: 0.5)
+                        .fill(Color.primary.opacity(RateSyncWidgetStyle.mediumDividerOpacity))
+                        .frame(height: RateSyncWidgetStyle.mediumDividerHeight)
+                        .widgetAccentable(false)
                         .accessibilityHidden(true)
 
                     Spacer(minLength: RateSyncWidgetStyle.mediumSectionSpacing)

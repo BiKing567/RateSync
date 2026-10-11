@@ -25,7 +25,7 @@ enum MediaRemoteSampleRateProbe {
     private static let getNowPlayingInfo: (@convention(c) (DispatchQueue, @escaping MRGetNowPlayingInfoCompletion) -> Void)? = {
         guard let handle = mrHandle,
               let sym = dlsym(handle, "MRMediaRemoteGetNowPlayingInfo") else {
-            Logger.switching.info("[MRProbe] MediaRemote symbols unavailable")
+            RateSyncLog.switching.info("[MRProbe] MediaRemote symbols unavailable")
             return nil
         }
         return unsafeBitCast(sym, to: (@convention(c) (DispatchQueue, @escaping MRGetNowPlayingInfoCompletion) -> Void).self)
@@ -101,7 +101,7 @@ enum MediaRemoteSampleRateProbe {
             // the active player before trusting its audio format keys.
             guard let getNowPlayingApplicationPID else {
                 guard RateSwitchingPolicy.shouldAcceptUnverifiedMediaRemoteFormat(expectedPID: expectedPID) else {
-                    Logger.switching.info("[MRProbe] active player PID API unavailable, ignoring unverified format")
+                    RateSyncLog.switching.info("[MRProbe] active player PID API unavailable, ignoring unverified format")
                     completeOnce.complete((nil, nil))
                     return
                 }
@@ -110,14 +110,14 @@ enum MediaRemoteSampleRateProbe {
             }
             getNowPlayingApplicationPID(queue) { activePID in
                 if let expectedPID, activePID != expectedPID {
-                    Logger.switching.info("[MRProbe] active player PID \(activePID) != event PID \(expectedPID), ignoring")
+                    RateSyncLog.switching.info("[MRProbe] active player PID \(activePID) != event PID \(expectedPID), ignoring")
                     completeOnce.complete((nil, nil))
                     return
                 }
                 let sampleRate = (dict[kSampleRate] as? NSNumber)?.doubleValue
                 let bitDepth = (dict[kBitDepth] as? NSNumber)?.intValue
                 if sampleRate != nil || bitDepth != nil {
-                    Logger.switching.info("[MRProbe] sampleRate=\(sampleRate ?? -1) bitDepth=\(bitDepth ?? -1)")
+                    RateSyncLog.switching.info("[MRProbe] sampleRate=\(sampleRate ?? -1) bitDepth=\(bitDepth ?? -1)")
                 }
                 completeOnce.complete((sampleRate, bitDepth))
             }

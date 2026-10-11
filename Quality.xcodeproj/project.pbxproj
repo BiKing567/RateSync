@@ -17,6 +17,7 @@
 		1272AA9C280DBB4B00FD72BA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1272AA9B280DBB4B00FD72BA /* Assets.xcassets */; };
 		1272AA9F280DBB4B00FD72BA /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1272AA9E280DBB4B00FD72BA /* Preview Assets.xcassets */; };
 		1272AAAC280DC5E900FD72BA /* Console.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1272AAAB280DC5E900FD72BA /* Console.swift */; };
+		D1A600000000000000000001 /* RateSyncLogging.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A600000000000000000003 /* RateSyncLogging.swift */; };
 		1272AAAE280DC68A00FD72BA /* CMPlayerStuff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1272AAAD280DC68A00FD72BA /* CMPlayerStuff.swift */; };
 		1272AAB1280DC71B00FD72BA /* Sweep in Frameworks */ = {isa = PBXBuildFile; productRef = 1272AAB0280DC71B00FD72BA /* Sweep */; };
 		127C972D281FCF000087313B /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 127C972C281FCF000087313B /* AppVersion.swift */; };
@@ -57,6 +58,8 @@
 		BFA000402E10000100320001 /* AppleMusicFormatParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA0003E2E10000100320001 /* AppleMusicFormatParser.swift */; };
 		BFA000442E10000100320001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BFA000432E10000100320001 /* Localizable.strings */; };
 		3DE301B5C3F9464FB9D4D6D7 /* Console.swift in RateSyncTests Sources */ = {isa = PBXBuildFile; fileRef = 1272AAAB280DC5E900FD72BA /* Console.swift */; };
+		D1A600000000000000000002 /* RateSyncLogging.swift in RateSyncTests Sources */ = {isa = PBXBuildFile; fileRef = D1A600000000000000000003 /* RateSyncLogging.swift */; };
+		D1A700000000000000000001 /* RateSyncLoggingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A700000000000000000002 /* RateSyncLoggingTests.swift */; };
 		ED4BD2FD8D97481D96BD2EA3 /* CMPlayerStuff.swift in RateSyncTests Sources */ = {isa = PBXBuildFile; fileRef = 1272AAAD280DC68A00FD72BA /* CMPlayerStuff.swift */; };
 		1C67B097713440E085C7506B /* Sweep in RateSyncTests Frameworks */ = {isa = PBXBuildFile; productRef = 692721F23B034ACBBAF01A3A /* Sweep */; };
 /* End PBXBuildFile section */
@@ -109,6 +112,8 @@
 		1272AA9E280DBB4B00FD72BA /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		1272AAA0280DBB4B00FD72BA /* Quality.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Quality.entitlements; sourceTree = "<group>"; };
 		1272AAAB280DC5E900FD72BA /* Console.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Console.swift; sourceTree = "<group>"; };
+		D1A600000000000000000003 /* RateSyncLogging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateSyncLogging.swift; sourceTree = "<group>"; };
+		D1A700000000000000000002 /* RateSyncLoggingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateSyncLoggingTests.swift; sourceTree = "<group>"; };
 		1272AAAD280DC68A00FD72BA /* CMPlayerStuff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CMPlayerStuff.swift; sourceTree = "<group>"; };
 		127C972C281FCF000087313B /* AppVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVersion.swift; sourceTree = "<group>"; };
 		1293436A28131591002E19A8 /* CurrentUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentUser.swift; sourceTree = "<group>"; };
@@ -220,6 +225,7 @@
 				1272AAA0280DBB4B00FD72BA /* Quality.entitlements */,
 				1272AA9D280DBB4B00FD72BA /* Preview Content */,
 				1272AAAB280DC5E900FD72BA /* Console.swift */,
+				D1A600000000000000000003 /* RateSyncLogging.swift */,
 				1272AAAD280DC68A00FD72BA /* CMPlayerStuff.swift */,
 				1221F3FA280F1EEF003E8B77 /* OutputDevices.swift */,
 				BFA000012E10000100320001 /* RateSwitchingPolicy.swift */,
@@ -265,6 +271,7 @@
 			isa = PBXGroup;
 			children = (
 				BFA000042E10000100320001 /* AudioFormatSelectorTests.swift */,
+				D1A700000000000000000002 /* RateSyncLoggingTests.swift */,
 				BFA000172E10000100320001 /* SwitchingSupportTests.swift */,
 			);
 			path = RateSyncTests;
@@ -431,6 +438,7 @@
 				1221F3FB280F1EEF003E8B77 /* OutputDevices.swift in Sources */,
 				1272AAAE280DC68A00FD72BA /* CMPlayerStuff.swift in Sources */,
 				1272AAAC280DC5E900FD72BA /* Console.swift in Sources */,
+				D1A600000000000000000001 /* RateSyncLogging.swift in Sources */,
 				1234F510281E9520007EC9F5 /* MediaRemoteController.swift in Sources */,
 				BF5A88A12E0F00000032F001 /* MediaRemoteSampleRateProbe.swift in Sources */,
 				1272AA9A280DBB4900FD72BA /* ContentView.swift in Sources */,
@@ -463,6 +471,8 @@
 				BFA0003B2E10000100320001 /* TrackEventIdentity.swift in Sources */,
 				BFA000402E10000100320001 /* AppleMusicFormatParser.swift in Sources */,
 				3DE301B5C3F9464FB9D4D6D7 /* Console.swift in RateSyncTests Sources */,
+				D1A600000000000000000002 /* RateSyncLogging.swift in RateSyncTests Sources */,
+				D1A700000000000000000001 /* RateSyncLoggingTests.swift in Sources */,
 				ED4BD2FD8D97481D96BD2EA3 /* CMPlayerStuff.swift in RateSyncTests Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

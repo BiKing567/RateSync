@@ -10,6 +10,7 @@ struct AppleMusicFormatEvidence: Equatable {
     let bitDepth: Int?
     let date: Date
     let isDolbyAtmos: Bool
+    let isSpatialAudio: Bool
 }
 
 enum AppleMusicFormatParser {
@@ -18,8 +19,9 @@ enum AppleMusicFormatParser {
     static func parse(_ entries: [AppleMusicLogEntry]) -> [AppleMusicFormatEvidence] {
         let highLevelFormats = entries.compactMap(parseHighLevelFormat)
         let dolbyFormats = highLevelFormats.filter(\.isDolbyAtmos)
-        let nonDolbyFormats = highLevelFormats.filter { !$0.isDolbyAtmos }
-        return dolbyFormats + nonDolbyFormats
+        let spatialAudioFormats = highLevelFormats.filter { !$0.isDolbyAtmos && $0.isSpatialAudio }
+        let otherFormats = highLevelFormats.filter { !$0.isDolbyAtmos && !$0.isSpatialAudio }
+        return dolbyFormats + spatialAudioFormats + otherFormats
     }
 
     private static func parseHighLevelFormat(_ entry: AppleMusicLogEntry) -> AppleMusicFormatEvidence? {
@@ -33,6 +35,7 @@ enum AppleMusicFormatParser {
 
         let rawBitDepth = value(after: "sdBitDepth = ", before: " bit", in: entry.message)
         let bitDepth = rawBitDepth.flatMap(Int.init)
+        let isSpatialAudio = entry.message.localizedCaseInsensitiveContains("is rendering spatial audio")
         let isDolbyAtmos = entry.message.localizedCaseInsensitiveContains("original is Atmos")
             || entry.message.localizedCaseInsensitiveContains("Dolby Atmos")
             || entry.message.localizedCaseInsensitiveContains("is Atmos")
@@ -40,7 +43,8 @@ enum AppleMusicFormatParser {
             sampleRate: sampleRateInKHz * 1_000,
             bitDepth: bitDepth,
             date: entry.date,
-            isDolbyAtmos: isDolbyAtmos
+            isDolbyAtmos: isDolbyAtmos,
+            isSpatialAudio: isSpatialAudio
         )
     }
 

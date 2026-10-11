@@ -19,6 +19,7 @@ RateSync should feel like a quiet utility: one glance, one answer. The signature
 | Primary text | `text.primary` | `.primary` | Track title and sample rate |
 | Secondary text | `text.secondary` | `.secondary` | Artist, bit depth, and unavailable state |
 | Signal accent | `accent.signal` | `Color.accentColor` | Artwork fallback, format bar, and restrained glow |
+| Divider | `line.widgetDivider` | `Color.primary.opacity(0.48)` | Medium metadata/readout separation; stays in the primary group in accented/glass mode |
 
 Use system semantic colors so the widget follows macOS light/dark appearance and the user's accent color automatically. The glow is a low-opacity radial layer, not a separate palette.
 
@@ -58,7 +59,7 @@ The 4×2 medium family uses the same hierarchy with more horizontal breathing ro
 - Use a centered horizontal two-zone layout: now-playing identity on the left, audio format on the right.
 - Artwork: 128 × 128 pt with a 22 pt corner radius, balancing the medium surface without crowding the right-hand hierarchy.
 - Metadata gap: 14 pt between artwork and the right-hand content stack; 2 pt between title lines and artist.
-- Medium content is a separated right-hand stack: larger track identity is anchored above, while the audio format sits below with 8 pt of breathing room on either side of a 0.5 pt low-contrast divider.
+- Medium content is a separated right-hand stack: larger track identity is anchored above, while the audio format sits below with 8 pt of breathing room on either side of a 1 pt semantic divider (`line.widgetDivider`).
 - The divider spans exactly the right-hand content column, so its leading edge aligns with the song text and its trailing edge keeps the same safe-area inset as the artwork's leading edge.
 - The medium format readout is leading-aligned within that stack, so the sample rate and bit depth share the song information's left edge instead of floating in a separate right rail.
 - The medium title may occupy up to two lines; the artist remains one line.
@@ -87,7 +88,7 @@ The Widget is a passive readout. There is no continuous animation: WidgetKit ref
 
 ## 7. Depth & Surface
 
-Use layered tonal shift only: a low-contrast semantic surface plus a radial accent glow supplies depth. No custom borders, dividers, or shadows.
+Use layered tonal shift only: a low-contrast semantic surface plus a radial accent glow supplies depth. The medium widget's single 1 pt semantic divider is the exception to the no-border rule; keep it in WidgetKit's primary group so it remains visible in both full-color and accented/glass appearances. Do not add other custom borders or shadows.
 
 ## 8. Accessibility Constraints & Accepted Debt
 
