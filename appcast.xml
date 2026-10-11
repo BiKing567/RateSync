@@ -6,6 +6,30 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>RateSync 3.2.7 Beta 2（预发布测试版）</title>
+            <pubDate>Sun, 11 Oct 2026 07:50:49 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p><strong>预发布测试版 / PRE-RELEASE BETA</strong></p>
+                <p>RateSync 3.2.7 Beta 2 修复 Apple Music 切歌、暂停恢复和采样率证据更新时的时序问题，重点用于验证 96 / 48 / 44.1 kHz 切换稳定性。</p>
+                <p>RateSync 3.2.7 Beta 2 fixes timing issues in Apple Music track changes, pause/resume recovery, and sample-rate evidence updates. This build is intended to test stable 96 / 48 / 44.1 kHz switching.</p>
+                <h4>修复 / Fixes</h4>
+                <ul>
+                    <li>防止旧的 AppleScript 超时或重试回调结束新一轮查询，避免同一首歌快速重试时串入旧结果。</li>
+                    <li>AppleScript 超时后保留当前曲目已经确认的采样率，不再被不完整的日志候选错误覆盖。</li>
+                    <li>补齐 Apple Music 解码器日志中的明确位深证据，并改进 Atmos / 空间音频格式证据的后续更新。</li>
+                    <li>Prevent stale AppleScript timeout and retry callbacks from completing a newer query.</li>
+                    <li>Preserve a confirmed current-track sample rate when AppleScript times out instead of replacing it with incomplete log evidence.</li>
+                    <li>Keep explicit decoder bit-depth evidence and improve later Atmos / spatial-audio evidence updates.</li>
+                </ul>
+                <p>这是预发布测试版，暂非稳定版；如遇问题请通过 GitHub Issues 反馈。</p>
+                <p>This is a pre-release beta, not the stable release. Please report issues through GitHub Issues.</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.2">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.2</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.7-beta.2/RateSync-3.2.7-beta.2.dmg" sparkle:version="39" sparkle:shortVersionString="3.2.7" sparkle:edSignature="1vvNf8xPk2bCYqU25j67Lcfuhz8n3kRNqr4PosiQAzfLYXRSRmNNe9E+ihpUfM/WKXs7Zi4tSdBh7uotDDgHCw==" length="4798213" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>RateSync 3.2.7 Beta 1（预发布测试版）</title>
             <pubDate>Wed, 07 Oct 2026 12:22:56 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
