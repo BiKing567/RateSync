@@ -78,8 +78,7 @@ class OutputDevices: ObservableObject {
     // grow the caches without bound (one entry per distinct MediaTrack).
     private static let maxCachedTracks = 200
     // Stability confirmation for post-window rate changes (see applyStats).
-    private var pendingCandidateRate: Float64?
-    private var pendingCandidateFirstSeen: Date?
+    private var pendingCandidate: RateGateDecisionPolicy.CandidateTracking?
 
     /// How long a parsed OSLog result may be reused before the archive is
     /// queried again. One query costs ~0.70 s of blocking work (measured on
@@ -699,8 +698,7 @@ class OutputDevices: ObservableObject {
            cachedSampleRate != sampleRate {
             trackAndSample.removeValue(forKey: expectedTrack)
             trackAndBitDepth.removeValue(forKey: expectedTrack)
-            pendingCandidateRate = nil
-            pendingCandidateFirstSeen = nil
+            pendingCandidate = nil
             RateSyncLog.switching.info(
                 "[AM CurrentTrackRate] replacing stale same-track rate \(cachedSampleRate, privacy: .public) with \(sampleRate, privacy: .public)"
             )
@@ -1272,37 +1270,47 @@ class OutputDevices: ObservableObject {
             // MediaRemote probe itself. A differing rate may only be
             // applied when (a) the post-track-change window has closed
             // AND (b) the same candidate has persisted across evaluations.
+            // Both windows count down concurrently from the candidate's first observation.
             // Equal-rate candidates pass through untouched.
             let sinceTrackChange = lastTrackChangeDate.map {
                 Date().timeIntervalSince($0)
             } ?? .infinity
             let rateDiffersFromDevice = defaultDevice?.nominalSampleRate != sampleRate
             if rateDiffersFromDevice {
-                if sinceTrackChange < policy.boundary {
-                    RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) != device \(defaultDevice?.nominalSampleRate ?? -1, privacy: .public) Hz inside boundary window, re-evaluating in 0.5s")
-                    processQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                        guard let self,
-                              self.isExpectedTrackCurrent(expectedTrack, generation: generation) else { return }
-                        self.switchLatestSampleRate(for: expectedTrack, recursion: true, generation: generation)
-                    }
-                    return
-                }
-                let requiredPersistence = currentTrack.flatMap { trackAndSample[$0] } != nil
-                    ? policy.lockedOverride
-                    : policy.stability
-                let confirmed: Bool
-                if pendingCandidateRate == sampleRate,
-                   let seen = pendingCandidateFirstSeen {
-                    confirmed = Date().timeIntervalSince(seen) >= requiredPersistence
-                } else {
-                    confirmed = false
-                }
+                let now = Date()
+                let candidate = RateGateDecisionPolicy.updateCandidate(
+                    current: pendingCandidate,
+                    rate: sampleRate,
+                    generation: generation,
+                    now: now
+                )
+                pendingCandidate = candidate
+
+                let isLocked = currentTrack.flatMap { trackAndSample[$0] } != nil
+                let requiredPersistence = RateGateDecisionPolicy.requiredPersistence(
+                    isLocked: isLocked,
+                    policy: policy
+                )
+                let boundarySatisfied = RateGateDecisionPolicy.isBoundarySatisfied(
+                    sinceTrackChange: sinceTrackChange,
+                    policy: policy
+                )
+                let stabilitySatisfied = RateGateDecisionPolicy.isStabilitySatisfied(
+                    candidateFirstSeen: candidate.firstSeen,
+                    now: now,
+                    requiredPersistence: requiredPersistence
+                )
+                let confirmed = boundarySatisfied && stabilitySatisfied
+
                 if !confirmed {
-                    if pendingCandidateRate != sampleRate {
-                        pendingCandidateRate = sampleRate
-                        pendingCandidateFirstSeen = Date()
+                    let persistenceElapsed = now.timeIntervalSince(candidate.firstSeen)
+                    if !boundarySatisfied && !stabilitySatisfied {
+                        RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz inside boundary (\(String(format: "%.1f", sinceTrackChange), privacy: .public)/\(String(format: "%.1f", policy.boundary), privacy: .public)s) and awaiting stability (\(String(format: "%.1f", persistenceElapsed), privacy: .public)/\(String(format: "%.1f", requiredPersistence), privacy: .public)s), re-evaluating in 0.5s")
+                    } else if !boundarySatisfied {
+                        RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) != device \(defaultDevice?.nominalSampleRate ?? -1, privacy: .public) Hz inside boundary window (\(String(format: "%.1f", sinceTrackChange), privacy: .public)/\(String(format: "%.1f", policy.boundary), privacy: .public)s), re-evaluating in 0.5s")
+                    } else {
+                        RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz awaiting stability (\(String(format: "%.1f", persistenceElapsed), privacy: .public)/\(String(format: "%.1f", requiredPersistence), privacy: .public)s), re-evaluating in 0.5s")
                     }
-                    RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz awaiting stability \(Int(requiredPersistence))s, re-evaluating in 0.5s")
                     processQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                         guard let self,
                               self.isExpectedTrackCurrent(expectedTrack, generation: generation) else { return }
@@ -1312,8 +1320,7 @@ class OutputDevices: ObservableObject {
                 }
                 RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz confirmed stable, applying")
             }
-            pendingCandidateRate = nil
-            pendingCandidateFirstSeen = nil
+            pendingCandidate = nil
 
             guard let defaultDevice = defaultDevice,
                   let formats = self.getFormats(device: defaultDevice) else { return }
@@ -1440,8 +1447,7 @@ class OutputDevices: ObservableObject {
     
     func updateSampleRate(_ sampleRate: Float64, bitDepth: Int?, runUserScript: Bool = true) {
         self.previousSampleRate = sampleRate
-        self.pendingCandidateRate = nil
-        self.pendingCandidateFirstSeen = nil
+        self.pendingCandidate = nil
         self.previousBitDepth = bitDepth
         RateSyncWidgetConfiguration.saveAudioFormat(sampleRate: sampleRate, bitDepth: bitDepth)
         reloadWidgetTimeline(reason: "RateSync applied format")
@@ -1559,8 +1565,7 @@ class OutputDevices: ObservableObject {
             self.trackAndBitDepth.removeValue(forKey: track)
             self.previousSampleRate = nil
             self.previousBitDepth = nil
-            self.pendingCandidateRate = nil
-            self.pendingCandidateFirstSeen = nil
+            self.pendingCandidate = nil
             self.switchLatestSampleRate(for: track)
         }
     }
@@ -1632,8 +1637,7 @@ class OutputDevices: ObservableObject {
             self.appleMusicDecoderFormatEvidence = nil
             self.appleMusicFallbackFormat = nil
             self.appleMusicFallbackAttemptedForTrack = false
-            self.pendingCandidateRate = nil
-            self.pendingCandidateFirstSeen = nil
+            self.pendingCandidate = nil
             self.renewTimer()
             // Track change: apply Apple Music's EQ preset for the new genre
             // (Apple Music only; no-op unless the auto-EQ switch is on).
@@ -1674,8 +1678,7 @@ class OutputDevices: ObservableObject {
             self.appleMusicFallbackFormat = nil
             self.appleMusicFallbackAttemptedForTrack = false
             self.lastTrackChangeDate = nil
-            self.pendingCandidateRate = nil
-            self.pendingCandidateFirstSeen = nil
+            self.pendingCandidate = nil
             self.timerCancellable?.cancel()
             self.timerCancellable = nil
             self.timerCalls = 0

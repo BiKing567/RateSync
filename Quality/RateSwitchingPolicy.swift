@@ -29,6 +29,60 @@ struct RateGatePolicy {
     static let audioQueue = RateGatePolicy(boundary: 0, stability: 0.6, lockedOverride: 0.6)
 }
 
+enum RateGateDecisionPolicy {
+    struct CandidateTracking: Equatable {
+        var rate: Float64
+        var generation: UInt64
+        var firstSeen: Date
+    }
+
+    static func updateCandidate(
+        current: CandidateTracking?,
+        rate: Float64,
+        generation: UInt64,
+        now: Date
+    ) -> CandidateTracking {
+        if let current, current.rate == rate, current.generation == generation {
+            return current
+        }
+        return CandidateTracking(rate: rate, generation: generation, firstSeen: now)
+    }
+
+    static func requiredPersistence(isLocked: Bool, policy: RateGatePolicy) -> TimeInterval {
+        isLocked ? policy.lockedOverride : policy.stability
+    }
+
+    static func isBoundarySatisfied(sinceTrackChange: TimeInterval, policy: RateGatePolicy) -> Bool {
+        sinceTrackChange >= policy.boundary
+    }
+
+    static func isStabilitySatisfied(
+        candidateFirstSeen: Date?,
+        now: Date,
+        requiredPersistence: TimeInterval
+    ) -> Bool {
+        guard let candidateFirstSeen else { return false }
+        return now.timeIntervalSince(candidateFirstSeen) >= requiredPersistence
+    }
+
+    static func isConfirmed(
+        sinceTrackChange: TimeInterval,
+        candidateFirstSeen: Date?,
+        now: Date,
+        policy: RateGatePolicy,
+        isLocked: Bool
+    ) -> Bool {
+        let boundarySatisfied = isBoundarySatisfied(sinceTrackChange: sinceTrackChange, policy: policy)
+        let persistence = requiredPersistence(isLocked: isLocked, policy: policy)
+        let stabilitySatisfied = isStabilitySatisfied(
+            candidateFirstSeen: candidateFirstSeen,
+            now: now,
+            requiredPersistence: persistence
+        )
+        return boundarySatisfied && stabilitySatisfied
+    }
+}
+
 enum RateSwitchingPolicy {
     static let maxPlausibleSampleRate: Double = 768_000
     static let maxPlausibleBitDepth: Int = 64

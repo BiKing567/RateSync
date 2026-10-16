@@ -6,6 +6,30 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>RateSync 3.2.7 Beta 3（预发布测试版）</title>
+            <pubDate>Fri, 16 Oct 2026 10:29:34 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p><strong>预发布测试版 / PRE-RELEASE BETA</strong></p>
+                <p>RateSync 3.2.7 Beta 3 修复 macOS 桌面小组件状态同步受沙盒权限拦截的问题，并优化切歌时采样率门控决策等待时序。</p>
+                <p>RateSync 3.2.7 Beta 3 fixes widget state refresh issues caused by sandbox boundaries on macOS, and optimizes sample-rate gate timing during track changes.</p>
+                <h4>修复与优化 / Fixes and Improvements</h4>
+                <ul>
+                    <li>修复小组件持久化存储路径被系统沙盒阻止写入导致小组件停滞不刷新的问题。</li>
+                    <li>新增跨沙盒只读权限与底层真实用户主目录解析，保证小组件与主应用稳定同步歌曲及采样率。</li>
+                    <li>优化切换门控等待逻辑：换曲保护窗口与稳定性计时并行判断，稳定候选采样率可更快生效（由约 5.5 秒缩短至 3.5 秒）。</li>
+                    <li>Fix widget state persistence write blockage across sandbox boundaries that caused the desktop widget to stop updating.</li>
+                    <li>Add cross-sandbox read entitlement and low-level user home directory resolution for reliable state synchronization.</li>
+                    <li>Optimize sample-rate gate decision timing: evaluate track-change guard window and stability persistence concurrently.</li>
+                </ul>
+                <p>这是预发布测试版，暂非稳定版；如遇问题请通过 GitHub Issues 反馈。</p>
+                <p>This is a pre-release beta, not the stable release. Please report issues through GitHub Issues.</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.3">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.3</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.7-beta.3/RateSync-3.2.7-beta.3.dmg" sparkle:version="40" sparkle:shortVersionString="3.2.7" sparkle:edSignature="YVIBmJ1DSOPUxFHtNnw6UaEWSJYpxWvPuRjzkmRL9HqmMyyjvExwjvfF8MX3D3Zqj7LAVhcw92eaxfseJNLoBA==" length="4826984" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>RateSync 3.2.7 Beta 2（预发布测试版）</title>
             <pubDate>Sun, 11 Oct 2026 07:50:49 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

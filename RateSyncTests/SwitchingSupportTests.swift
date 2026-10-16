@@ -225,6 +225,189 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(policy.lockedOverride, RateGatePolicy.standard.lockedOverride, accuracy: 0.001)
     }
 
+    func testConcurrentGateConfirmsEarlyStableCandidateAsSoonAsBoundaryWindowElapses() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let policy = RateGatePolicy.standard // boundary: 3.5, stability: 2.0
+
+        // Candidate 96 kHz observed at t = 0.5s after track change
+        let candidateSeenAt = t0.addingTimeInterval(0.5)
+        let candidate = RateGateDecisionPolicy.updateCandidate(
+            current: nil,
+            rate: 96_000,
+            generation: 1,
+            now: candidateSeenAt
+        )
+
+        // At t = 2.5s (2.0s persistence reached, but boundary is 2.5s < 3.5s)
+        let at2_5s = t0.addingTimeInterval(2.5)
+        XCTAssertTrue(
+            RateGateDecisionPolicy.isStabilitySatisfied(
+                candidateFirstSeen: candidate.firstSeen,
+                now: at2_5s,
+                requiredPersistence: RateGateDecisionPolicy.requiredPersistence(isLocked: false, policy: policy)
+            )
+        )
+        XCTAssertFalse(
+            RateGateDecisionPolicy.isBoundarySatisfied(
+                sinceTrackChange: 2.5,
+                policy: policy
+            )
+        )
+        XCTAssertFalse(
+            RateGateDecisionPolicy.isConfirmed(
+                sinceTrackChange: 2.5,
+                candidateFirstSeen: candidate.firstSeen,
+                now: at2_5s,
+                policy: policy,
+                isLocked: false
+            )
+        )
+
+        // At t = 3.5s (boundary 3.5s reached and persistence 3.0s >= 2.0s reached)
+        let at3_5s = t0.addingTimeInterval(3.5)
+        XCTAssertTrue(
+            RateGateDecisionPolicy.isBoundarySatisfied(
+                sinceTrackChange: 3.5,
+                policy: policy
+            )
+        )
+        XCTAssertTrue(
+            RateGateDecisionPolicy.isConfirmed(
+                sinceTrackChange: 3.5,
+                candidateFirstSeen: candidate.firstSeen,
+                now: at3_5s,
+                policy: policy,
+                isLocked: false
+            )
+        )
+    }
+
+    func testConcurrentGateResetsStabilityWhenCandidateRateChangesDuringBoundaryWindow() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let policy = RateGatePolicy.standard // boundary: 3.5, stability: 2.0
+
+        // Transient 44.1 kHz candidate observed at t = 0.5s
+        var candidate = RateGateDecisionPolicy.updateCandidate(
+            current: nil,
+            rate: 44_100,
+            generation: 1,
+            now: t0.addingTimeInterval(0.5)
+        )
+
+        // At t = 2.0s, real format settles on 96 kHz
+        candidate = RateGateDecisionPolicy.updateCandidate(
+            current: candidate,
+            rate: 96_000,
+            generation: 1,
+            now: t0.addingTimeInterval(2.0)
+        )
+
+        // At t = 3.5s, boundary window has elapsed (3.5s >= 3.5s), but 96 kHz only stable for 1.5s (< 2.0s)
+        let at3_5s = t0.addingTimeInterval(3.5)
+        XCTAssertTrue(RateGateDecisionPolicy.isBoundarySatisfied(sinceTrackChange: 3.5, policy: policy))
+        XCTAssertFalse(
+            RateGateDecisionPolicy.isStabilitySatisfied(
+                candidateFirstSeen: candidate.firstSeen,
+                now: at3_5s,
+                requiredPersistence: policy.stability
+            )
+        )
+        XCTAssertFalse(
+            RateGateDecisionPolicy.isConfirmed(
+                sinceTrackChange: 3.5,
+                candidateFirstSeen: candidate.firstSeen,
+                now: at3_5s,
+                policy: policy,
+                isLocked: false
+            )
+        )
+
+        // At t = 4.0s, 96 kHz stability reaches 2.0s (2.0s to 4.0s) -> confirmed!
+        let at4_0s = t0.addingTimeInterval(4.0)
+        XCTAssertTrue(
+            RateGateDecisionPolicy.isStabilitySatisfied(
+                candidateFirstSeen: candidate.firstSeen,
+                now: at4_0s,
+                requiredPersistence: policy.stability
+            )
+        )
+        XCTAssertTrue(
+            RateGateDecisionPolicy.isConfirmed(
+                sinceTrackChange: 4.0,
+                candidateFirstSeen: candidate.firstSeen,
+                now: at4_0s,
+                policy: policy,
+                isLocked: false
+            )
+        )
+    }
+
+    func testConcurrentGateResetsStabilityWhenPlaybackGenerationChanges() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let policy = RateGatePolicy.standard
+
+        // Generation 1 candidate seen at t = 0s
+        let gen1Candidate = RateGateDecisionPolicy.updateCandidate(
+            current: nil,
+            rate: 96_000,
+            generation: 1,
+            now: t0
+        )
+
+        // Playback resumes / new generation at t = 3.0s with same rate
+        let gen2Candidate = RateGateDecisionPolicy.updateCandidate(
+            current: gen1Candidate,
+            rate: 96_000,
+            generation: 2,
+            now: t0.addingTimeInterval(3.0)
+        )
+
+        // Candidate firstSeen was reset to t = 3.0s
+        XCTAssertEqual(gen2Candidate.firstSeen, t0.addingTimeInterval(3.0))
+        XCTAssertFalse(
+            RateGateDecisionPolicy.isStabilitySatisfied(
+                candidateFirstSeen: gen2Candidate.firstSeen,
+                now: t0.addingTimeInterval(3.5),
+                requiredPersistence: policy.stability
+            )
+        )
+    }
+
+    func testConcurrentGatePreservesLockedOverrideForMidTrackChanges() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let policy = RateGatePolicy.standard // lockedOverride: 12.0
+
+        // Boundary window has long passed (mid-song change: 30s)
+        let candidate = RateGateDecisionPolicy.updateCandidate(
+            current: nil,
+            rate: 192_000,
+            generation: 1,
+            now: t0
+        )
+
+        // At 2.0s (normal stability reached, but locked requires 12.0s)
+        XCTAssertFalse(
+            RateGateDecisionPolicy.isConfirmed(
+                sinceTrackChange: 32.0,
+                candidateFirstSeen: candidate.firstSeen,
+                now: t0.addingTimeInterval(2.0),
+                policy: policy,
+                isLocked: true
+            )
+        )
+
+        // At 12.0s (locked override reached)
+        XCTAssertTrue(
+            RateGateDecisionPolicy.isConfirmed(
+                sinceTrackChange: 42.0,
+                candidateFirstSeen: candidate.firstSeen,
+                now: t0.addingTimeInterval(12.0),
+                policy: policy,
+                isLocked: true
+            )
+        )
+    }
+
     func testAppleMusicMissingScriptRateRetriesUntilSixSecondDeadline() {
         XCTAssertEqual(
             AppleMusicSampleRatePolicy.resolution(for: .missingValue, elapsed: 0),
@@ -719,7 +902,13 @@ final class SwitchingSupportTests: XCTestCase {
     func testWidgetStateUsesOnlyStandaloneContainerFileBridge() {
         let paths = RateSyncWidgetConfiguration.stateStorageURLs.map(\.path)
 
-        XCTAssertEqual(paths, [RateSyncWidgetConfiguration.localWidgetStateURL.path])
+        XCTAssertEqual(
+            paths,
+            [
+                RateSyncWidgetConfiguration.sharedApplicationSupportStateURL.path,
+                RateSyncWidgetConfiguration.localWidgetStateURL.path,
+            ]
+        )
         XCTAssertFalse(paths.contains { $0.contains("/Library/Group Containers/") })
     }
 

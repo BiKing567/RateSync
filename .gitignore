@@ -55,6 +55,8 @@ xcuserdata/
 
 # Build artifacts
 *.dmg
+.dmg-tools/
+.omo/
 
 ### Windows ###
 # Thumbnail cache (appears when the repo is opened on Windows)

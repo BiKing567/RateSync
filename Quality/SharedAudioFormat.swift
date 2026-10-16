@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 struct SharedAudioFormat: Equatable {
     let sampleRate: Float64
@@ -64,6 +65,21 @@ enum RateSyncWidgetConfiguration {
     private static let updatedAtKey = "nowPlaying.updatedAt"
     private static let stateFileName = "ratesync-widget-state.plist"
     private static let legacyGroupIdentifier = "group.com.biking.RateSync"
+    private static let logger = Logger(subsystem: "com.biking.RateSync", category: "widget-storage")
+
+    private static var realUserHomeURL: URL {
+        if let pw = getpwuid(getuid()), let home = pw.pointee.pw_dir {
+            let path = FileManager.default.string(withFileSystemRepresentation: home, length: Int(strlen(home)))
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    static var sharedApplicationSupportStateURL: URL {
+        realUserHomeURL
+            .appendingPathComponent("Library/Application Support/RateSync", isDirectory: true)
+            .appendingPathComponent(stateFileName)
+    }
 
     static var localWidgetStateURL: URL {
         let applicationSupportURL: URL
@@ -74,7 +90,7 @@ enum RateSyncWidgetConfiguration {
            ).first {
             applicationSupportURL = extensionApplicationSupportURL
         } else {
-            applicationSupportURL = FileManager.default.homeDirectoryForCurrentUser
+            applicationSupportURL = realUserHomeURL
                 .appendingPathComponent(
                     "Library/Containers/\(widgetBundleIdentifier)/Data/Library/Application Support",
                     isDirectory: true
@@ -247,7 +263,7 @@ enum RateSyncWidgetConfiguration {
     }
 
     private static var stateURLs: [URL] {
-        [localWidgetStateURL]
+        [sharedApplicationSupportStateURL, localWidgetStateURL]
     }
 
     static var stateStorageURLs: [URL] {
@@ -332,13 +348,20 @@ enum RateSyncWidgetConfiguration {
     }
 
     private static func saveState(_ state: WidgetState) {
-        guard let data = try? PropertyListEncoder().encode(state) else { return }
+        guard let data = try? PropertyListEncoder().encode(state) else {
+            logger.error("Failed to encode widget state")
+            return
+        }
         for stateURL in stateURLs {
-            try? FileManager.default.createDirectory(
-                at: stateURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try? data.write(to: stateURL, options: .atomic)
+            do {
+                try FileManager.default.createDirectory(
+                    at: stateURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try data.write(to: stateURL, options: .atomic)
+            } catch {
+                logger.debug("Failed to write widget state to \(stateURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
