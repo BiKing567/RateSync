@@ -15,7 +15,7 @@
                 <p>RateSync 3.2.7 Beta 4 fixes an issue where the decoded source sample rate from third-party players (NetEase, QQ Music) via AudioQueue was superseded by the hardware output rate, and prioritizes ground-truth decoder logs over AppleScript defaults for Apple Music.</p>
                 <h4>修复 / Fixes</h4>
                 <ul>
-                    <li>重构 AudioQueue 日志解析：优先提取 AudioConverter 中的真实源格式（lpcm），丢弃反映当前硬件输出率的 AudioQueueObject 日志，彻底解决 48k 变 44.1k、96k 变 48k 的误切问题。</li>
+                    <li>重构 AudioQueue 日志解析：优先提取 AudioConverter 中的真实源格式（lpcm），丢弃反映当前硬件输出率的 AudioQueueObject 日志，修复 48k 变 44.1k、96k 变 48k 的误切问题。</li>
                     <li>提升 Apple Music 真实无损解码器（ACAppleLosslessDecoder）日志优先级，避免流媒体曲目受 AppleScript 静态 44.1 kHz 模板值影响。</li>
                     <li>Refactor AudioQueue log parsing: prioritize genuine decoded source format from AudioConverter and discard resampled hardware output rates.</li>
                     <li>Prioritize ground-truth Apple Music decoder logs (ACAppleLosslessDecoder) over static AppleScript catalog template values.</li>
