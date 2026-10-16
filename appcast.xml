@@ -6,6 +6,28 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>RateSync 3.2.7 Beta 4（预发布测试版）</title>
+            <pubDate>Fri, 16 Oct 2026 12:07:22 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p><strong>预发布测试版 / PRE-RELEASE BETA</strong></p>
+                <p>RateSync 3.2.7 Beta 4 修复第三方播放器（网易云音乐、QQ 音乐）AudioQueue 解码源采样率被声卡当前硬件率覆盖的问题，并完善 Apple Music 云端曲目真实解码器采样率优先级。</p>
+                <p>RateSync 3.2.7 Beta 4 fixes an issue where the decoded source sample rate from third-party players (NetEase, QQ Music) via AudioQueue was superseded by the hardware output rate, and prioritizes ground-truth decoder logs over AppleScript defaults for Apple Music.</p>
+                <h4>修复 / Fixes</h4>
+                <ul>
+                    <li>重构 AudioQueue 日志解析：优先提取 AudioConverter 中的真实源格式（lpcm），丢弃反映当前硬件输出率的 AudioQueueObject 日志，彻底解决 48k 变 44.1k、96k 变 48k 的误切问题。</li>
+                    <li>提升 Apple Music 真实无损解码器（ACAppleLosslessDecoder）日志优先级，避免流媒体曲目受 AppleScript 静态 44.1 kHz 模板值影响。</li>
+                    <li>Refactor AudioQueue log parsing: prioritize genuine decoded source format from AudioConverter and discard resampled hardware output rates.</li>
+                    <li>Prioritize ground-truth Apple Music decoder logs (ACAppleLosslessDecoder) over static AppleScript catalog template values.</li>
+                </ul>
+                <p>这是预发布测试版，暂非稳定版；如遇问题请通过 GitHub Issues 反馈。</p>
+                <p>This is a pre-release beta, not the stable release. Please report issues through GitHub Issues.</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.4">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.4</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.7-beta.4/RateSync-3.2.7-beta.4.dmg" sparkle:version="41" sparkle:shortVersionString="3.2.7" sparkle:edSignature="zny3+XL4ecMgJ7bW1n0MtuSQZWXAzlg0e5MAx0JRcOaqBIoQbj/e+8aZMB+WtAJRRYYAx1YVIQ6x67IwgU8RDA==" length="4834628" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>RateSync 3.2.7 Beta 3（预发布测试版）</title>
             <pubDate>Fri, 16 Oct 2026 10:29:34 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

@@ -64,3 +64,6 @@ Thumbs.db
 
 ### Local test audio (generated, not shipped) ###
 TestAudio/
+
+### Swift Package Manager / Build artifacts ###
+.build/

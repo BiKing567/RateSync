@@ -164,6 +164,42 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(stat?.bitDepth, 24)
     }
 
+    func testAudioQueueParserPrefersLPCMConverterSourceRateOverResampledOutput() {
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 409),
+                message: "AudioQueueObject.cpp:488 New output; format 2 ch, 44100 Hz, Float32, ..."
+            ),
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 408),
+                message: "AudioConverter from 2 ch, 48000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 44100 Hz, Float32"
+            )
+        ]
+
+        let stat = CMPlayerParser.parseAudioQueueConsoleLogs(entries).first
+
+        XCTAssertEqual(stat?.sampleRate, 48_000, "The 48 kHz source rate from AudioConverter must supersede the 44.1 kHz hardware output rate.")
+        XCTAssertEqual(stat?.bitDepth, 24)
+    }
+
+    func testAudioQueueParserPrefersLPCM96kSourceRateOverResampled48kOutput() {
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 502),
+                message: "AudioQueueObject.cpp:488 New output; format 2 ch, 48000 Hz, Float32, ..."
+            ),
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 501),
+                message: "AudioConverter from 2 ch, 96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 48000 Hz, Float32"
+            )
+        ]
+
+        let stat = CMPlayerParser.parseAudioQueueConsoleLogs(entries).first
+
+        XCTAssertEqual(stat?.sampleRate, 96_000, "The 96 kHz source rate from AudioConverter must supersede the 48 kHz hardware output rate.")
+        XCTAssertEqual(stat?.bitDepth, 24)
+    }
+
     func testSampleRateOnlyCandidateCarriesNoBitDepthEvidence() {
         let stat = CMPlayerStats.sampleRateOnly(
             sampleRate: 44_100,
@@ -646,6 +682,41 @@ final class SwitchingSupportTests: XCTestCase {
                 currentIsPriorityFormat: false,
                 incomingIsPriorityFormat: true
             )
+        )
+    }
+
+    func testAppleMusicEffectiveSampleRatePrefersDecoderEvidenceOverAppleScript44k() {
+        let decoderStat = CMPlayerStats(sampleRate: 96_000, bitDepth: 24, date: Date())
+        let formatStat = CMPlayerStats(sampleRate: 48_000, bitDepth: 24, date: Date())
+
+        // Decoder log (ACAppleLosslessDecoder.cpp) takes top priority
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: 44_100,
+                decoderEvidence: decoderStat,
+                formatEvidence: nil
+            ),
+            96_000
+        )
+
+        // Media format log (asbdSampleRate) takes priority over static AppleScript template
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: 44_100,
+                decoderEvidence: nil,
+                formatEvidence: formatStat
+            ),
+            48_000
+        )
+
+        // Fallback to script rate when no log evidence is available yet
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: 44_100,
+                decoderEvidence: nil,
+                formatEvidence: nil
+            ),
+            44_100
         )
     }
 

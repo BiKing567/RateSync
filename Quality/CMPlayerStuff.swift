@@ -117,68 +117,77 @@ class CMPlayerParser {
     /// Parses AudioQueue "New output" entries, which report the decoded
     /// (source) sample rate for players that render through AudioQueue
     /// without resampling - e.g. Electron-based apps such as NetEase
-    /// CloudMusic (process "NeteaseMusic"). Bit depth is taken from the
-    /// companion "lpcm ... N-bit" converter line when present.
+    /// Parses AudioQueue console logs.
+    /// Priority is given to decoded source format lines from AudioConverter (LPCM lines
+    /// reporting "from ... Hz, lpcm ... N-bit"), which represent the true decoded stream format.
+    /// "AudioQueueObject ... New output" entries report the AudioQueue output format configured
+    /// to match the destination/hardware device, so they must not override genuine LPCM converter
+    /// evidence belonging to the same playback session.
     static func parseAudioQueueConsoleLogs(_ entries: [SimpleConsole]) -> [CMPlayerStats] {
         let kTimeDifferenceAcceptance = 5.0 // seconds
-        var lastDate: Date?
-        var sampleRate: Double?
-        var bitDepth: Int?
 
-        var stats = [CMPlayerStats]()
+        var converterStats: [CMPlayerStats] = []
+        var queueStats: [CMPlayerStats] = []
 
         for entry in entries {
             let date = entry.date
             let rawMessage = entry.message
 
-            if let lastDate = lastDate, date.timeIntervalSince(lastDate) > kTimeDifferenceAcceptance {
-                sampleRate = nil
-                bitDepth = nil
-            }
+            // 1. Decoded LPCM source evidence from AudioConverter:
+            // "AudioConverter from  2 ch,  96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to ..."
+            // or "from  2 ch,  96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to ..."
+            if rawMessage.contains("lpcm") && rawMessage.contains("from ") && rawMessage.contains(" Hz") {
+                var sampleRate: Double?
+                var bitDepth: Int?
 
-            // "AudioQueueObject.cpp:488 ... New output; format  2 ch,  96000 Hz, Float32, ..."
-            if rawMessage.contains("New output"), rawMessage.contains("AudioQueueObject"),
-               let sub = rawMessage.firstSubstring(between: "format ", and: " Hz") {
-                let strSampleRate = String(sub).trimmingCharacters(in: .whitespacesAndNewlines)
-                if let ratePart = strSampleRate.split(separator: ",").last?.trimmingCharacters(in: .whitespaces) {
-                    sampleRate = Double(ratePart)
-                }
-            }
-
-            // "from  2 ch,  96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to ..."
-            if rawMessage.contains("lpcm"),
-               let sub = rawMessage.firstSubstring(between: "lpcm", and: "-bit") {
-                let strBitDepth = String(sub).trimmingCharacters(in: .whitespacesAndNewlines)
-                if let depthPart = strBitDepth.split(separator: " ").last {
-                    bitDepth = Int(depthPart)
-                }
-            }
-            // NetEase/QQ via AudioConverter: "from  2 ch,  48000 Hz, lpcm (0x...) 24-bit ... to ..."
-            // New output may be missing or reflect hardware rate, so also extract source rate from the
-            // converter's "from ... Hz, lpcm" line. Prefer lpcm source rate when present (decoded source).
-            if rawMessage.contains("AudioConverter") && rawMessage.contains("from ") && rawMessage.contains("lpcm") {
-                if let sub = rawMessage.firstSubstring(between: "from ", and: " Hz,") {
-                    let str = String(sub).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if let ratePart = str.split(separator: ",").last?.trimmingCharacters(in: .whitespaces),
+                if let fromRange = rawMessage.range(of: "from "),
+                   let hzRange = rawMessage.range(of: " Hz", range: fromRange.upperBound..<rawMessage.endIndex) {
+                    let sub = rawMessage[fromRange.upperBound..<hzRange.lowerBound]
+                    if let ratePart = sub.split(separator: ",").last?.trimmingCharacters(in: .whitespaces),
                        let r = Double(ratePart), r > 0 {
                         sampleRate = r
                     }
                 }
+
+                if let lpcmRange = rawMessage.range(of: "lpcm"),
+                   let bitRange = rawMessage.range(of: "-bit", range: lpcmRange.upperBound..<rawMessage.endIndex) {
+                    let sub = rawMessage[lpcmRange.upperBound..<bitRange.lowerBound]
+                    if let depthPart = sub.split(separator: " ").last,
+                       let bd = Int(depthPart), bd > 0 {
+                        bitDepth = bd
+                    }
+                }
+
+                if let sr = sampleRate {
+                    converterStats.append(CMPlayerStats(sampleRate: sr, bitDepth: bitDepth, date: date))
+                }
             }
 
-            if let sr = sampleRate, sr > 0 {
-                let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth, date: date)
-                stats.append(stat)
-                sampleRate = nil
-                bitDepth = nil
-                RateSyncLog.switching.info("detected audioqueue stat \(stat)")
-                break
+            // 2. AudioQueueObject "New output" output-format log:
+            // "AudioQueueObject.cpp:488 New output; format  2 ch,  96000 Hz, Float32, ..."
+            if rawMessage.contains("New output") && rawMessage.contains("AudioQueueObject") {
+                if let formatRange = rawMessage.range(of: "format "),
+                   let hzRange = rawMessage.range(of: " Hz", range: formatRange.upperBound..<rawMessage.endIndex) {
+                    let sub = rawMessage[formatRange.upperBound..<hzRange.lowerBound]
+                    if let ratePart = sub.split(separator: ",").last?.trimmingCharacters(in: .whitespaces),
+                       let r = Double(ratePart), r > 0 {
+                        queueStats.append(CMPlayerStats(sampleRate: r, bitDepth: nil, date: date))
+                    }
+                }
             }
-
-            lastDate = date
-
         }
-        return stats
+
+        // An AudioQueueObject output stat is only retained if no companion LPCM source converter
+        // stat exists within the time window for that playback session.
+        let standaloneQueueStats = queueStats.filter { qStat in
+            !converterStats.contains(where: { abs($0.date.timeIntervalSince(qStat.date)) <= kTimeDifferenceAcceptance })
+        }
+
+        let combined = (converterStats + standaloneQueueStats).sorted(by: { $0.date > $1.date })
+        if let first = combined.first {
+            RateSyncLog.switching.info("detected audioqueue stat \(first)")
+        }
+        return combined
     }
 
 

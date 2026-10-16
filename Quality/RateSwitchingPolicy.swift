@@ -430,6 +430,24 @@ enum AppleMusicFormatPolicy {
         !currentIsPriorityFormat || incomingIsPriorityFormat
     }
 
+    /// Determines the effective sample rate for an Apple Music track.
+    /// Ground-truth decoder evidence (from ACAppleLosslessDecoder.cpp) and media format
+    /// logs (from asbdSampleRate) take precedence over the iTunes AppleScript database query,
+    /// because AppleScript returns a static 44.1 kHz template value for cloud streaming tracks.
+    static func effectiveSampleRate(
+        scriptRate: Double?,
+        decoderEvidence: CMPlayerStats?,
+        formatEvidence: CMPlayerStats?
+    ) -> Double? {
+        if let decoderRate = decoderEvidence?.sampleRate, decoderRate > 0 {
+            return decoderRate
+        }
+        if let formatRate = formatEvidence?.sampleRate, formatRate > 0 {
+            return formatRate
+        }
+        return scriptRate
+    }
+
     static func bitDepthEvidence(
         formatEvidence: CMPlayerStats?,
         fallbackEvidence: CMPlayerStats?,

@@ -685,29 +685,35 @@ class OutputDevices: ObservableObject {
     ) {
         guard isExpectedTrackCurrent(expectedTrack, generation: generation) else { return }
 
-        if sampleRate.isFinite,
-           sampleRate > 0,
-           sampleRate <= RateSwitchingPolicy.maxPlausibleSampleRate {
-            appleMusicLastKnownCurrentTrackSampleRate = sampleRate
+        let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: sampleRate,
+            decoderEvidence: appleMusicDecoderFormatEvidence,
+            formatEvidence: appleMusicFormatEvidence
+        ) ?? sampleRate
+
+        if effectiveRate.isFinite,
+           effectiveRate > 0,
+           effectiveRate <= RateSwitchingPolicy.maxPlausibleSampleRate {
+            appleMusicLastKnownCurrentTrackSampleRate = effectiveRate
         }
 
-        // A later AppleScript answer for the same track is new evidence, not
+        // A later AppleScript or decoder answer for the same track is new evidence, not
         // jitter from another track. Drop the old same-track lock so the
         // normal stability gate can confirm and apply the corrected rate.
         if let cachedSampleRate = trackAndSample[expectedTrack],
-           cachedSampleRate != sampleRate {
+           cachedSampleRate != effectiveRate {
             trackAndSample.removeValue(forKey: expectedTrack)
             trackAndBitDepth.removeValue(forKey: expectedTrack)
             pendingCandidate = nil
             RateSyncLog.switching.info(
-                "[AM CurrentTrackRate] replacing stale same-track rate \(cachedSampleRate, privacy: .public) with \(sampleRate, privacy: .public)"
+                "[AM CurrentTrackRate] replacing stale same-track rate \(cachedSampleRate, privacy: .public) with \(effectiveRate, privacy: .public)"
             )
         }
         let atmosphere = appleMusicFormatEvidence.flatMap {
             $0.isPriorityAppleMusicFormat ? $0 : nil
         }
         let action = AppleMusicCurrentTrackRatePolicy.action(
-            hasCurrentTrackRate: sampleRate.isFinite && sampleRate > 0,
+            hasCurrentTrackRate: effectiveRate.isFinite && effectiveRate > 0,
             hasPriorityEvidence: atmosphere != nil,
             atmosProbeCompleted: appleMusicAtmosProbeCompletedGeneration == generation
         )
@@ -724,7 +730,7 @@ class OutputDevices: ObservableObject {
             )
             return
         case .waitForAtmosProbe:
-            appleMusicSampleRateState = .resolved(sampleRate)
+            appleMusicSampleRateState = .resolved(effectiveRate)
             return
         case .fallbackToLogs:
             appleMusicSampleRateState = .fallbackToLogs
@@ -738,12 +744,12 @@ class OutputDevices: ObservableObject {
             break
         }
 
-        appleMusicSampleRateState = .resolved(sampleRate)
+        appleMusicSampleRateState = .resolved(effectiveRate)
         let atmosProbeStatus = appleMusicAtmosProbeCompletedGeneration == generation ? "complete" : "pending"
-        RateSyncLog.switching.info("[AM RateDecision] source=AppleScript action=stabilityGate sampleRate=\(sampleRate, privacy: .public) atmosProbe=\(atmosProbeStatus, privacy: .public)")
+        RateSyncLog.switching.info("[AM RateDecision] source=AppleScript/Decoder action=stabilityGate sampleRate=\(effectiveRate, privacy: .public) atmosProbe=\(atmosProbeStatus, privacy: .public)")
 
         let stat = CMPlayerStats.sampleRateOnly(
-            sampleRate: sampleRate,
+            sampleRate: effectiveRate,
             bitDepth: AppleMusicFormatPolicy.bitDepthEvidence(
                 formatEvidence: appleMusicFormatEvidence,
                 fallbackEvidence: appleMusicFallbackFormat,
@@ -1080,6 +1086,19 @@ class OutputDevices: ObservableObject {
             return
         }
         appleMusicDecoderFormatEvidence = incoming
+
+        // If the decoder reports a concrete rate that differs from the currently applied rate,
+        // re-evaluate to switch to the genuine decoded lossless sample rate.
+        if let currentTrack,
+           let appliedRate = trackAndSample[currentTrack],
+           appliedRate != incoming.sampleRate,
+           incoming.sampleRate > 0 {
+            RateSyncLog.switching.info("[AM Decoder] decoder rate \(incoming.sampleRate, privacy: .public) differs from applied \(appliedRate, privacy: .public), re-evaluating")
+            trackAndSample.removeValue(forKey: currentTrack)
+            trackAndBitDepth.removeValue(forKey: currentTrack)
+            pendingCandidate = nil
+            switchLatestSampleRate(for: currentTrack, recursion: true, generation: currentTrackGeneration)
+        }
     }
 
     /// Classifies an AudioQueue log result for the gate.
