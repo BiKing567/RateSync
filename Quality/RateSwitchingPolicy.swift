@@ -432,19 +432,68 @@ enum AppleMusicFormatPolicy {
 
     /// Determines the effective sample rate for an Apple Music track.
     /// Ground-truth decoder evidence (from ACAppleLosslessDecoder.cpp) and media format
-    /// logs (from asbdSampleRate) take precedence over the iTunes AppleScript database query,
-    /// because AppleScript returns a static 44.1 kHz template value for cloud streaming tracks.
+    /// logs (from asbdSampleRate) take precedence over the iTunes AppleScript database query
+    /// when they represent the current track, because AppleScript returns a static 44.1 kHz
+    /// template value for cloud streaming tracks.
+    ///
+    /// Freshness & provenance validation:
+    /// - If formatEvidence is newer than decoderEvidence, formatEvidence takes precedence.
+    /// - If decoderEvidence predates trackStartedAt (e.g. leftover from previous track),
+    ///   it must not override a differing scriptRate or newer formatEvidence.
     static func effectiveSampleRate(
         scriptRate: Double?,
         decoderEvidence: CMPlayerStats?,
-        formatEvidence: CMPlayerStats?
+        formatEvidence: CMPlayerStats?,
+        trackStartedAt: Date? = nil
     ) -> Double? {
-        if let decoderRate = decoderEvidence?.sampleRate, decoderRate > 0 {
-            return decoderRate
-        }
-        if let formatRate = formatEvidence?.sampleRate, formatRate > 0 {
+        let validDecoderRate: Double? = {
+            guard let rate = decoderEvidence?.sampleRate, rate > 0 else { return nil }
+            return rate
+        }()
+        let validFormatRate: Double? = {
+            guard let rate = formatEvidence?.sampleRate, rate > 0 else { return nil }
+            return rate
+        }()
+
+        // 1. If formatEvidence is newer than decoderEvidence, formatEvidence takes precedence.
+        if let formatRate = validFormatRate,
+           let formatEvidence = formatEvidence,
+           let decoderEvidence = decoderEvidence,
+           formatEvidence.date > decoderEvidence.date {
             return formatRate
         }
+
+        // 2. If decoderEvidence is available, verify its freshness and track boundary.
+        if let decoderRate = validDecoderRate,
+           let decoderEvidence = decoderEvidence {
+            let isStalePreTrackEvidence: Bool = {
+                guard let trackStartedAt = trackStartedAt else { return false }
+                return decoderEvidence.date < trackStartedAt
+            }()
+
+            if !isStalePreTrackEvidence {
+                return decoderRate
+            }
+
+            // Decoder evidence predated trackStartedAt.
+            // If formatEvidence is available for the new track, prefer formatEvidence.
+            if let formatRate = validFormatRate {
+                return formatRate
+            }
+
+            // If AppleScript provided a rate differing from the pre-track decoder rate,
+            // prefer the script rate for the current track.
+            if let scriptRate = scriptRate, scriptRate > 0, scriptRate != decoderRate {
+                return scriptRate
+            }
+
+            return decoderRate
+        }
+
+        if let formatRate = validFormatRate {
+            return formatRate
+        }
+
         return scriptRate
     }
 
@@ -494,6 +543,51 @@ enum AudioFormatSelector {
         guard let closestBitDepth else { return nil }
         return formatsAtTargetRate.first {
             $0.mSampleRate == targetRate && $0.mBitsPerChannel == closestBitDepth
+        }
+    }
+}
+
+/// Manages cache key generation, TTL validation, and eviction for parsed log statistics.
+enum LogStatsCachePolicy {
+    static let defaultTTL: TimeInterval = 0.8
+    static let maxEntries: Int = 16
+
+    /// Generates the cache key for AudioQueue log statistics.
+    /// Incorporates the current track generation and the filtering `since` boundary
+    /// so different tracks or different filter thresholds never collide or share entries.
+    static func audioQueueCacheKey(
+        process: String,
+        generation: UInt64,
+        since: Date?
+    ) -> String {
+        let sinceKey = since.map { String(Int64(($0.timeIntervalSince1970 * 1000).rounded())) } ?? "all"
+        return "aq:\(process):\(generation):\(sinceKey)"
+    }
+
+    /// Generates the cache key for Apple Music log statistics.
+    static func appleMusicCacheKey(process: String) -> String {
+        return "am:\(process)"
+    }
+
+    /// Prunes expired entries, drops entries belonging to old playback generations,
+    /// and ensures the cache does not exceed its maximum capacity.
+    static func prune(
+        _ cache: inout [String: (stats: [CMPlayerStats], at: Date)],
+        currentGeneration: UInt64,
+        now: Date = Date(),
+        ttl: TimeInterval = defaultTTL,
+        maxEntries: Int = maxEntries
+    ) {
+        let currentGenPrefix = ":\(currentGeneration):"
+        cache = cache.filter { key, value in
+            guard now.timeIntervalSince(value.at) < ttl else { return false }
+            if key.hasPrefix("aq:") {
+                return key.contains(currentGenPrefix)
+            }
+            return true
+        }
+        if cache.count > maxEntries {
+            cache.removeAll()
         }
     }
 }

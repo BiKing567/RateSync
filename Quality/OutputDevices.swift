@@ -52,6 +52,7 @@ class OutputDevices: ObservableObject {
     
     private var previousSampleRate: Float64?
     private var previousBitDepth: Int?
+    private var currentTrackStartedAt: Date?
     private var lastTrackChangeDate: Date?
     /// Distinguishes a replay/resume of identical MediaRemote metadata from
     /// callbacks belonging to the previous playback generation.
@@ -688,7 +689,8 @@ class OutputDevices: ObservableObject {
         let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
             scriptRate: sampleRate,
             decoderEvidence: appleMusicDecoderFormatEvidence,
-            formatEvidence: appleMusicFormatEvidence
+            formatEvidence: appleMusicFormatEvidence,
+            trackStartedAt: currentTrackStartedAt
         ) ?? sampleRate
 
         if effectiveRate.isFinite,
@@ -1088,8 +1090,15 @@ class OutputDevices: ObservableObject {
         appleMusicDecoderFormatEvidence = incoming
 
         // If the decoder reports a concrete rate that differs from the currently applied rate,
-        // re-evaluate to switch to the genuine decoded lossless sample rate.
-        if let currentTrack,
+        // and belongs to the current track's playback, re-evaluate to switch to the genuine
+        // decoded lossless sample rate.
+        let isCurrentTrackEvidence: Bool = {
+            guard let currentTrackStartedAt = currentTrackStartedAt else { return true }
+            return incoming.date >= currentTrackStartedAt
+        }()
+
+        if isCurrentTrackEvidence,
+           let currentTrack,
            let appliedRate = trackAndSample[currentTrack],
            appliedRate != incoming.sampleRate,
            incoming.sampleRate > 0 {
@@ -1157,31 +1166,44 @@ class OutputDevices: ObservableObject {
             return []
         }
         let isMusicProcess = (processName == PlayerProfile.appleMusic.processName)
+
         var allStats: [CMPlayerStats]
         if isMusicProcess {
             guard isAppleMusicSource else { return [] }
+            // P2: recursive retries widen the tolerance window. Apple Music decoder logs can be
+            // written more than 0.5s before the MediaRemote event (e.g. delayed UI state updates);
+            // a strict filter would permanently discard them and, if the AppleScript fallback
+            // also fails, the switch would be lost.
+            let threshold = recursion
+                ? lastTrackChangeDate?.addingTimeInterval(-1.5)
+                : lastTrackChangeDate
             allStats = self.cachedAppleMusicStats(process: processName)
+            if let threshold {
+                allStats = allStats.filter { $0.date >= threshold }
+            }
         } else {
             RateSyncLog.switching.info("log chain for process \(processName) via AudioQueue parser")
-            // AudioQueue "New output" entries are written once per queue creation
-            // and are these apps' ONLY rate source (no probe keys, no AppleScript).
-            // The query window must outlive the gate confirmation so the single
-            // log line cannot expire mid-gate - observed as "first play never
-            // switches until the track is replayed". Stale entries stay excluded
-            // by the lastTrackChangeDate filter below.
-            allStats = self.cachedAudioQueueStats(process: processName)
-        }
-        // Ignore logs from before the current track started playing,
-        // as stale logs from the previous track cause wrong switches.
-        if let lastTrackChangeDate = lastTrackChangeDate {
-            // P2: recursive retries widen the tolerance window. Decoder logs can be
-            // written more than 0.5s before the MediaRemote event (e.g. delayed UI
-            // state updates); a strict filter would permanently discard them and,
-            // if the AppleScript fallback also fails, the switch would be lost.
-            let threshold = recursion ? lastTrackChangeDate.addingTimeInterval(-1.5) : lastTrackChangeDate
-            allStats = allStats.filter { $0.date >= threshold }
+            // AudioQueue session pairing boundary must remain strictly consistent across retries.
+            // Widening the boundary for retries would pull in previous-track converter logs (e.g. t - 0.8s)
+            // that erroneously suppress the new track's hardware output logs (t), causing wrong switches.
+            let aqBoundary = lastTrackChangeDate
+            allStats = self.cachedAudioQueueStats(process: processName, since: aqBoundary)
+            if let aqBoundary {
+                allStats = allStats.filter { $0.date >= aqBoundary }
+            }
         }
         return allStats
+    }
+
+    /// Prunes expired entries from `logStatsCache` so old generation/track entries
+    /// do not accumulate across songs.
+    private func pruneLogStatsCache(now: Date = Date()) {
+        LogStatsCachePolicy.prune(
+            &logStatsCache,
+            currentGeneration: currentTrackGeneration,
+            now: now,
+            ttl: Self.logStatsTTL
+        )
     }
 
     /// AudioQueue stats for `process`, reusing a recent parse when possible.
@@ -1195,18 +1217,23 @@ class OutputDevices: ObservableObject {
     /// log line has not been written yet, and caching that would freeze the
     /// retry loop into returning nothing until the TTL expires.
     ///
-    /// The cached value is the PARSED list, not the post-filter result, so the
-    /// `lastTrackChangeDate` filter below still runs on every read and a line
-    /// belonging to the previous track can never be applied to the new one.
-    private func cachedAudioQueueStats(process: String) -> [CMPlayerStats] {
-        let key = "aq:\(process)"
+    /// The cached value is keyed by process, generation, and since boundary,
+    /// with pre-filtering by `since` ensuring companion suppression only evaluates
+    /// entries belonging to the current playback window.
+    private func cachedAudioQueueStats(process: String, since: Date? = nil) -> [CMPlayerStats] {
+        pruneLogStatsCache()
+        let key = LogStatsCachePolicy.audioQueueCacheKey(
+            process: process,
+            generation: currentTrackGeneration,
+            since: since
+        )
         if let cached = logStatsCache[key],
            Date().timeIntervalSince(cached.at) < Self.logStatsTTL {
             RateSyncLog.switching.info("[LogCache] hit for \(process, privacy: .public) (\(cached.stats.count) stats)")
             return cached.stats
         }
         let stats = self.getAllStats(process: process,
-                                     parser: CMPlayerParser.parseAudioQueueConsoleLogs,
+                                     parser: { CMPlayerParser.parseAudioQueueConsoleLogs($0, since: since) },
                                      durationSeconds: 60)
         if stats.isEmpty {
             // Do not cache "nothing found" - the line may simply not be
@@ -1221,7 +1248,8 @@ class OutputDevices: ObservableObject {
     }
 
     private func cachedAppleMusicStats(process: String) -> [CMPlayerStats] {
-        let key = "am:\(process)"
+        pruneLogStatsCache()
+        let key = LogStatsCachePolicy.appleMusicCacheKey(process: process)
         if let cached = logStatsCache[key],
            Date().timeIntervalSince(cached.at) < Self.logStatsTTL {
             RateSyncLog.switching.info("[LogCache] hit for Apple Music (\(cached.stats.count) stats)")
@@ -1641,6 +1669,7 @@ class OutputDevices: ObservableObject {
             // time minus a small tolerance, so the new track's logs pass the filter
             // while stale logs from the previous track are discarded.
             let trackStartedAt = eventDate ?? Date()
+            self.currentTrackStartedAt = trackStartedAt
             self.lastTrackChangeDate = trackStartedAt.addingTimeInterval(-0.5)
             self.appleMusicSampleRateState = isAppleMusicSource ? .waiting : .inactive
             self.appleMusicSampleRateWaitStartedAt = isAppleMusicSource ? trackStartedAt : nil
@@ -1656,6 +1685,7 @@ class OutputDevices: ObservableObject {
             self.appleMusicDecoderFormatEvidence = nil
             self.appleMusicFallbackFormat = nil
             self.appleMusicFallbackAttemptedForTrack = false
+            self.logStatsCache.removeAll()
             self.pendingCandidate = nil
             self.renewTimer()
             // Track change: apply Apple Music's EQ preset for the new genre
@@ -1696,6 +1726,7 @@ class OutputDevices: ObservableObject {
             self.appleMusicDecoderFormatEvidence = nil
             self.appleMusicFallbackFormat = nil
             self.appleMusicFallbackAttemptedForTrack = false
+            self.currentTrackStartedAt = nil
             self.lastTrackChangeDate = nil
             self.pendingCandidate = nil
             self.timerCancellable?.cancel()

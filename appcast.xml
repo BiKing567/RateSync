@@ -6,6 +6,32 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>RateSync 3.2.7 Beta 5（预发布测试版）</title>
+            <pubDate>Sun, 18 Oct 2026 17:30:27 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p><strong>预发布测试版 / PRE-RELEASE BETA</strong></p>
+                <p>RateSync 3.2.7 Beta 5 修复第三方播放器 AudioQueue 日志重试边界与缓存过滤一致性问题，完善 Apple Music 解码日志时效校验，并修复小组件双文件合并时清空记录丢失的问题。</p>
+                <p>RateSync 3.2.7 Beta 5 fixes AudioQueue retry boundary and cache filtering consistency for third-party players, improves Apple Music decoder log freshness validation, and fixes cleared-state resurrection during widget state file merges.</p>
+                <h4>修复 / Fixes</h4>
+                <ul>
+                    <li>统一 AudioQueue 普通与递归重试的会话过滤边界，避免重试时放宽窗口引入旧转换日志抑制新曲目输出。</li>
+                    <li>AudioQueue 缓存键区分过滤时间戳与播放代次，并增加日志缓存 TTL、代次清理与容量上限，防止跨曲目污染与内存累积。</li>
+                    <li>Apple Music 解码日志校验增加真实曲目起点判断，优先采纳更新的格式日志，避免上一首残留日志覆盖当前曲目采样率。</li>
+                    <li>小组件持久化存储增加显式清空时间戳，防止单文件写入失败时旧状态被错误合并复活。</li>
+                    <li>Unify AudioQueue session filter boundaries across normal and recursive retry paths to prevent stale converter logs from suppressing new track output.</li>
+                    <li>Differentiate AudioQueue cache keys by timestamp and playback generation, and add TTL/generation eviction and capacity caps to avoid cross-track pollution.</li>
+                    <li>Validate Apple Music decoder log freshness against genuine track start time and prioritize newer format logs over stale pre-track decoder logs.</li>
+                    <li>Add explicit clear timestamps to widget state storage to prevent cleared states from being resurrected on partial write failures.</li>
+                </ul>
+                <p>这是预发布测试版，暂非稳定版；如遇问题请通过 GitHub Issues 反馈。</p>
+                <p>This is a pre-release beta, not the stable release. Please report issues through GitHub Issues.</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.5">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.7-beta.5</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.7-beta.5/RateSync-3.2.7-beta.5.dmg" sparkle:version="42" sparkle:shortVersionString="3.2.7" sparkle:edSignature="Pb0WptPYzxfsS7ltZum/us5rAcv7GNLKi/5ZCcmFGiXPyfpAFJebFvq4kci5HzS0qwvxtbJpYvyY64aoIG4KDw==" length="4869993" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>RateSync 3.2.7 Beta 4（预发布测试版）</title>
             <pubDate>Fri, 16 Oct 2026 12:07:22 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

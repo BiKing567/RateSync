@@ -200,6 +200,152 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(stat?.bitDepth, 24)
     }
 
+    func testAudioQueueParserDoesNotSuppressNewOutputLogWhenPriorConverterIsFromPreviousTrack() {
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 1003),
+                message: "AudioQueueObject.cpp:488 New output; format 2 ch, 48000 Hz, Float32, ..."
+            ),
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 1000),
+                message: "AudioConverter from 2 ch, 96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 44100 Hz, Float32"
+            )
+        ]
+
+        // 1. Without since: converter is 3 seconds older (t - 3s), so it should not suppress the output at t
+        let parsed = CMPlayerParser.parseAudioQueueConsoleLogs(entries)
+        let queueStat = parsed.first(where: { $0.sampleRate == 48_000 })
+        XCTAssertNotNil(queueStat, "A new track output log at t must not be suppressed by a converter from t - 3s.")
+
+        // 2. With since: filter to the new track window (since = 1001)
+        let filteredStats = CMPlayerParser.parseAudioQueueConsoleLogs(entries, since: Date(timeIntervalSince1970: 1001))
+        XCTAssertEqual(filteredStats.count, 1)
+        XCTAssertEqual(filteredStats.first?.sampleRate, 48_000)
+    }
+
+    func testAudioQueueParserWithProductionSincePreFilterRetainsNewTrackOutputWhenOldConverterIs800msPrior() {
+        // Track change occurs at t = 1000.0, production tolerance threshold is t - 0.5s = 999.5.
+        // Old converter was emitted at t - 0.8s = 999.2 (belongs to previous track, target 48 kHz).
+        // New track outputs 48 kHz at t = 1000.0.
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 1000.0),
+                message: "AudioQueueObject.cpp:488 New output; format 2 ch, 48000 Hz, Float32, ..."
+            ),
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 999.2),
+                message: "AudioConverter from 2 ch, 96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 48000 Hz, Float32"
+            )
+        ]
+
+        let productionThreshold = Date(timeIntervalSince1970: 999.5)
+
+        // Passing the production threshold as `since` filters out the 999.2s old converter BEFORE
+        // companion suppression, so the new track's 48 kHz output at 1000.0s is preserved.
+        let parsed = CMPlayerParser.parseAudioQueueConsoleLogs(entries, since: productionThreshold)
+        XCTAssertEqual(parsed.count, 1)
+        XCTAssertEqual(parsed.first?.sampleRate, 48_000)
+    }
+
+    func testAudioQueueBoundaryConsistencyBetweenNormalAndRecursionPaths() {
+        // Track change occurs at t = 1000.0.
+        // Old track emitted a 96 kHz -> 48 kHz converter at t = 999.2 (800ms before track event).
+        // New track emitted 48 kHz AudioQueue output at t = 1000.0.
+        let entries = [
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 1000.0),
+                message: "AudioQueueObject.cpp:488 New output; format 2 ch, 48000 Hz, Float32, ..."
+            ),
+            SimpleConsole(
+                date: Date(timeIntervalSince1970: 999.2),
+                message: "AudioConverter from 2 ch, 96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 48000 Hz, Float32"
+            )
+        ]
+
+        let aqBoundary = Date(timeIntervalSince1970: 999.5) // lastTrackChangeDate (t - 0.5s)
+
+        // 1. Normal path: uses aqBoundary (999.5)
+        let normalParsed = CMPlayerParser.parseAudioQueueConsoleLogs(entries, since: aqBoundary)
+            .filter { $0.date >= aqBoundary }
+        XCTAssertEqual(normalParsed.count, 1)
+        XCTAssertEqual(normalParsed.first?.sampleRate, 48_000, "Normal path must choose 48 kHz.")
+
+        // 2. Recursion path: must KEEP aqBoundary consistent (must NOT widen to t - 2.0s = 998.0)
+        // If it were widened to 998.0, the 999.2s old converter would enter and suppress the 48 kHz output.
+        let recursionParsed = CMPlayerParser.parseAudioQueueConsoleLogs(entries, since: aqBoundary)
+            .filter { $0.date >= aqBoundary }
+        XCTAssertEqual(recursionParsed.count, 1)
+        XCTAssertEqual(recursionParsed.first?.sampleRate, 48_000, "Recursion path must also choose 48 kHz, matching normal path.")
+
+        // 3. Contrast: if someone erroneously passed a widened threshold (998.0) to parseAudioQueueConsoleLogs:
+        let widenedParsed = CMPlayerParser.parseAudioQueueConsoleLogs(entries, since: Date(timeIntervalSince1970: 998.0))
+        XCTAssertEqual(widenedParsed.first?.sampleRate, 96_000, "Demonstrates that widening to 2s re-introduces the stale 96 kHz converter, confirming why AudioQueue boundary must stay consistent.")
+    }
+
+    func testLogStatsCachePolicyAudioQueueKeyDifferentiatesSinceAndGeneration() {
+        let date1 = Date(timeIntervalSince1970: 1000.5)
+        let date2 = Date(timeIntervalSince1970: 1001.0)
+
+        let key1 = LogStatsCachePolicy.audioQueueCacheKey(process: "NeteaseMusic", generation: 1, since: date1)
+        let key2 = LogStatsCachePolicy.audioQueueCacheKey(process: "NeteaseMusic", generation: 1, since: date2)
+        let keyDiffGen = LogStatsCachePolicy.audioQueueCacheKey(process: "NeteaseMusic", generation: 2, since: date1)
+        let keyNoSince = LogStatsCachePolicy.audioQueueCacheKey(process: "NeteaseMusic", generation: 1, since: nil)
+
+        XCTAssertNotEqual(key1, key2, "Different `since` dates must yield distinct cache keys.")
+        XCTAssertNotEqual(key1, keyDiffGen, "Different generations must yield distinct cache keys.")
+        XCTAssertNotEqual(key1, keyNoSince, "Presence vs absence of `since` must yield distinct cache keys.")
+        XCTAssertEqual(key1, "aq:NeteaseMusic:1:1000500")
+        XCTAssertEqual(keyNoSince, "aq:NeteaseMusic:1:all")
+    }
+
+    func testLogStatsCachePolicyPruningEvictsStaleGenerationsAndExpiredEntries() {
+        let now = Date(timeIntervalSince1970: 2000.0)
+        var cache: [String: (stats: [CMPlayerStats], at: Date)] = [:]
+
+        let stat48 = [CMPlayerStats(sampleRate: 48000, bitDepth: nil, date: now)]
+        let stat96 = [CMPlayerStats(sampleRate: 96000, bitDepth: nil, date: now)]
+
+        // Generation 1 entry (active timestamp)
+        let gen1Key = LogStatsCachePolicy.audioQueueCacheKey(process: "NeteaseMusic", generation: 1, since: now)
+        cache[gen1Key] = (stat48, now)
+
+        // Generation 2 active entry (active timestamp)
+        let gen2Key = LogStatsCachePolicy.audioQueueCacheKey(process: "NeteaseMusic", generation: 2, since: now)
+        cache[gen2Key] = (stat48, now)
+
+        // Generation 2 expired entry (timestamp 1.0s ago, TTL is 0.8s)
+        let expiredDate = now.addingTimeInterval(-1.0)
+        let gen2ExpiredKey = LogStatsCachePolicy.audioQueueCacheKey(process: "NeteaseMusic", generation: 2, since: expiredDate)
+        cache[gen2ExpiredKey] = (stat96, expiredDate)
+
+        // Apple Music entry (active timestamp)
+        let amKey = LogStatsCachePolicy.appleMusicCacheKey(process: "Music")
+        cache[amKey] = (stat48, now)
+
+        // Prune with currentGeneration = 2
+        LogStatsCachePolicy.prune(&cache, currentGeneration: 2, now: now, ttl: 0.8)
+
+        XCTAssertNil(cache[gen1Key], "Entries from previous generations must be evicted.")
+        XCTAssertNil(cache[gen2ExpiredKey], "Expired entries exceeding TTL must be evicted.")
+        XCTAssertNotNil(cache[gen2Key], "Active entries for current generation must be retained.")
+        XCTAssertNotNil(cache[amKey], "Active Apple Music entries must be retained.")
+    }
+
+    func testLogStatsCachePolicyPruningEnforcesMaxEntries() {
+        let now = Date(timeIntervalSince1970: 2000.0)
+        var cache: [String: (stats: [CMPlayerStats], at: Date)] = [:]
+        let stat = [CMPlayerStats(sampleRate: 44100, bitDepth: nil, date: now)]
+
+        for i in 0..<20 {
+            let key = "aq:test:1:\(i)"
+            cache[key] = (stat, now)
+        }
+
+        XCTAssertEqual(cache.count, 20)
+        LogStatsCachePolicy.prune(&cache, currentGeneration: 1, now: now, ttl: 0.8, maxEntries: 16)
+        XCTAssertEqual(cache.count, 0, "Cache exceeding maxEntries must be cleared to prevent unbounded memory growth.")
+    }
+
     func testSampleRateOnlyCandidateCarriesNoBitDepthEvidence() {
         let stat = CMPlayerStats.sampleRateOnly(
             sampleRate: 44_100,
@@ -720,6 +866,77 @@ final class SwitchingSupportTests: XCTestCase {
         )
     }
 
+    func testAppleMusicEffectiveSampleRatePrefersNewerFormatEvidenceOverStaleDecoderLog() {
+        let staleDecoderStat = CMPlayerStats(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            date: Date(timeIntervalSince1970: 99.6)
+        )
+        let newerFormatStat = CMPlayerStats(
+            sampleRate: 96_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.1)
+        )
+
+        // When formatEvidence (100.1) is newer than decoderEvidence (99.6), formatEvidence must win
+        let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: 96_000,
+            decoderEvidence: staleDecoderStat,
+            formatEvidence: newerFormatStat,
+            trackStartedAt: Date(timeIntervalSince1970: 100.0)
+        )
+
+        XCTAssertEqual(effectiveRate, 96_000, "Newer format log must take precedence over stale decoder log from previous track.")
+    }
+
+    func testAppleMusicEffectiveSampleRateRejectsPreTrackDecoderLogConflictingWithScript() {
+        let preTrackDecoderStat = CMPlayerStats(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            date: Date(timeIntervalSince1970: 99.6)
+        )
+
+        // Track started at 100.0; AppleScript returned 96 kHz for the current track.
+        // A stale 44.1 kHz decoder log from 99.6s must not override the current track's 96 kHz script rate.
+        let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: 96_000,
+            decoderEvidence: preTrackDecoderStat,
+            formatEvidence: nil,
+            trackStartedAt: Date(timeIntervalSince1970: 100.0)
+        )
+
+        XCTAssertEqual(effectiveRate, 96_000, "Pre-track decoder log from previous track tail must not override new track's AppleScript rate.")
+    }
+
+    func testAppleMusicEffectiveSampleRateDistinguishesTrueTrackStartFromToleranceThreshold() {
+        let eventDate = Date(timeIntervalSince1970: 100.0) // true track start (currentTrackStartedAt)
+        let toleranceThreshold = eventDate.addingTimeInterval(-0.5) // lastTrackChangeDate (99.5)
+        let stalePreTrackDecoderStat = CMPlayerStats(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            date: Date(timeIntervalSince1970: 99.6) // 0.4s before track event, passes tolerance (>= 99.5)
+        )
+
+        // If the true track start time (currentTrackStartedAt = 100.0) is passed, the 99.6s log
+        // is identified as pre-track evidence and does NOT override the 96 kHz script rate.
+        let correctEffectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: 96_000,
+            decoderEvidence: stalePreTrackDecoderStat,
+            formatEvidence: nil,
+            trackStartedAt: eventDate
+        )
+        XCTAssertEqual(correctEffectiveRate, 96_000, "Using the true track start time (eventDate) must prevent a 99.6s old decoder log from overriding the 96 kHz rate.")
+
+        // Conversely, passing the tolerance threshold (99.5) would mistakenly treat the 99.6s log as current-track evidence.
+        let mistakenEffectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: 96_000,
+            decoderEvidence: stalePreTrackDecoderStat,
+            formatEvidence: nil,
+            trackStartedAt: toleranceThreshold
+        )
+        XCTAssertEqual(mistakenEffectiveRate, 44_100, "Passing the tolerance threshold would mistake pre-track log as current evidence, confirming why currentTrackStartedAt is needed.")
+    }
+
     func testResolvesPresetRateForSpotify() {
         // Given
         let spotifyBundleIdentifier = "com.spotify.client"
@@ -1136,6 +1353,72 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(merged?.title, "Current song")
         XCTAssertEqual(merged?.artist, "Current artist")
         XCTAssertEqual(merged?.trackUpdatedAt, Date(timeIntervalSince1970: 31))
+    }
+
+    func testWidgetStateMergeDoesNotResurrectClearedTrackWhenOneFileWriteFails() {
+        // File A succeeded in clearing track at t=50
+        let clearedFileState = RateSyncWidgetConfiguration.WidgetState(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            formatUpdatedAt: Date(timeIntervalSince1970: 20),
+            title: nil,
+            artist: nil,
+            artworkDataBase64: nil,
+            trackUpdatedAt: nil,
+            formatClearedAt: nil,
+            trackClearedAt: Date(timeIntervalSince1970: 50)
+        )
+        // File B failed to write, remaining on stale track at t=20
+        let staleFileState = RateSyncWidgetConfiguration.WidgetState(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            formatUpdatedAt: Date(timeIntervalSince1970: 20),
+            title: "Stale Song",
+            artist: "Stale Artist",
+            artworkDataBase64: nil,
+            trackUpdatedAt: Date(timeIntervalSince1970: 20),
+            formatClearedAt: nil,
+            trackClearedAt: nil
+        )
+
+        let merged = RateSyncWidgetConfiguration.mergeStates([clearedFileState, staleFileState])
+
+        XCTAssertNil(merged?.title, "A cleared track state at t=50 must not resurrect the stale song from t=20.")
+        XCTAssertNil(merged?.artist)
+        XCTAssertEqual(merged?.trackClearedAt, Date(timeIntervalSince1970: 50))
+    }
+
+    func testWidgetStateMergeDoesNotResurrectClearedFormatWhenOneFileWriteFails() {
+        // File A succeeded in clearing format at t=50
+        let clearedFileState = RateSyncWidgetConfiguration.WidgetState(
+            sampleRate: nil,
+            bitDepth: nil,
+            formatUpdatedAt: nil,
+            title: "Current Song",
+            artist: "Current Artist",
+            artworkDataBase64: nil,
+            trackUpdatedAt: Date(timeIntervalSince1970: 20),
+            formatClearedAt: Date(timeIntervalSince1970: 50),
+            trackClearedAt: nil
+        )
+        // File B failed to write, remaining on stale format at t=20
+        let staleFileState = RateSyncWidgetConfiguration.WidgetState(
+            sampleRate: 96_000,
+            bitDepth: 24,
+            formatUpdatedAt: Date(timeIntervalSince1970: 20),
+            title: "Current Song",
+            artist: "Current Artist",
+            artworkDataBase64: nil,
+            trackUpdatedAt: Date(timeIntervalSince1970: 20),
+            formatClearedAt: nil,
+            trackClearedAt: nil
+        )
+
+        let merged = RateSyncWidgetConfiguration.mergeStates([clearedFileState, staleFileState])
+
+        XCTAssertNil(merged?.sampleRate, "A cleared format state at t=50 must not resurrect the stale format from t=20.")
+        XCTAssertNil(merged?.bitDepth)
+        XCTAssertEqual(merged?.formatClearedAt, Date(timeIntervalSince1970: 50))
     }
 
     func testWidgetPrefersLiveOutputFormatWhenPersistedStateIsStale() {

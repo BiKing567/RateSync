@@ -121,24 +121,42 @@ class CMPlayerParser {
     /// Priority is given to decoded source format lines from AudioConverter (LPCM lines
     /// reporting "from ... Hz, lpcm ... N-bit"), which represent the true decoded stream format.
     /// "AudioQueueObject ... New output" entries report the AudioQueue output format configured
-    /// to match the destination/hardware device, so they must not override genuine LPCM converter
-    /// evidence belonging to the same playback session.
+    /// to match the destination/hardware device.
+    ///
+    /// Companion correlation:
+    /// - An AudioQueueObject output stat is only suppressed if a genuine companion AudioConverter
+    ///   stat exists within the same tight initialization window (<= 1.0s) AND converts to
+    ///   the same hardware rate (matching session).
+    /// - Stale converter logs from previous tracks (e.g. t - 3s) must not suppress new track outputs.
     static func parseAudioQueueConsoleLogs(_ entries: [SimpleConsole]) -> [CMPlayerStats] {
-        let kTimeDifferenceAcceptance = 5.0 // seconds
+        parseAudioQueueConsoleLogs(entries, since: nil)
+    }
 
-        var converterStats: [CMPlayerStats] = []
+    static func parseAudioQueueConsoleLogs(
+        _ entries: [SimpleConsole],
+        since: Date?
+    ) -> [CMPlayerStats] {
+        let kCompanionMaxTimeDelta = 1.0 // seconds
+
+        let filteredEntries = entries.filter { entry in
+            guard let since = since else { return true }
+            return entry.date >= since
+        }
+
+        var converterEvidences: [(stat: CMPlayerStats, targetRate: Double?)] = []
         var queueStats: [CMPlayerStats] = []
 
-        for entry in entries {
+        for entry in filteredEntries {
             let date = entry.date
             let rawMessage = entry.message
 
             // 1. Decoded LPCM source evidence from AudioConverter:
-            // "AudioConverter from  2 ch,  96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to ..."
+            // "AudioConverter from  2 ch,  96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 48000 Hz, Float32"
             // or "from  2 ch,  96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to ..."
             if rawMessage.contains("lpcm") && rawMessage.contains("from ") && rawMessage.contains(" Hz") {
                 var sampleRate: Double?
                 var bitDepth: Int?
+                var targetRate: Double?
 
                 if let fromRange = rawMessage.range(of: "from "),
                    let hzRange = rawMessage.range(of: " Hz", range: fromRange.upperBound..<rawMessage.endIndex) {
@@ -158,8 +176,18 @@ class CMPlayerParser {
                     }
                 }
 
+                if let toRange = rawMessage.range(of: "to "),
+                   let targetHzRange = rawMessage.range(of: " Hz", range: toRange.upperBound..<rawMessage.endIndex) {
+                    let sub = rawMessage[toRange.upperBound..<targetHzRange.lowerBound]
+                    if let ratePart = sub.split(separator: ",").last?.trimmingCharacters(in: .whitespaces),
+                       let tr = Double(ratePart), tr > 0 {
+                        targetRate = tr
+                    }
+                }
+
                 if let sr = sampleRate {
-                    converterStats.append(CMPlayerStats(sampleRate: sr, bitDepth: bitDepth, date: date))
+                    let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth, date: date)
+                    converterEvidences.append((stat: stat, targetRate: targetRate))
                 }
             }
 
@@ -178,11 +206,19 @@ class CMPlayerParser {
         }
 
         // An AudioQueueObject output stat is only retained if no companion LPCM source converter
-        // stat exists within the time window for that playback session.
+        // stat exists within the tight initialization window (<= 1.0s) for that playback session.
         let standaloneQueueStats = queueStats.filter { qStat in
-            !converterStats.contains(where: { abs($0.date.timeIntervalSince(qStat.date)) <= kTimeDifferenceAcceptance })
+            !converterEvidences.contains { conv in
+                let timeDelta = abs(conv.stat.date.timeIntervalSince(qStat.date))
+                guard timeDelta <= kCompanionMaxTimeDelta else { return false }
+                if let targetRate = conv.targetRate {
+                    return abs(targetRate - qStat.sampleRate) < 1.0
+                }
+                return true
+            }
         }
 
+        let converterStats = converterEvidences.map { $0.stat }
         let combined = (converterStats + standaloneQueueStats).sorted(by: { $0.date > $1.date })
         if let first = combined.first {
             RateSyncLog.switching.info("detected audioqueue stat \(first)")

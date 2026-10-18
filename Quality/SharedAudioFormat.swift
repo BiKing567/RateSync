@@ -54,6 +54,30 @@ enum RateSyncWidgetConfiguration {
         var artist: String?
         var artworkDataBase64: String?
         var trackUpdatedAt: Date?
+        var formatClearedAt: Date?
+        var trackClearedAt: Date?
+
+        init(
+            sampleRate: Double? = nil,
+            bitDepth: Int? = nil,
+            formatUpdatedAt: Date? = nil,
+            title: String? = nil,
+            artist: String? = nil,
+            artworkDataBase64: String? = nil,
+            trackUpdatedAt: Date? = nil,
+            formatClearedAt: Date? = nil,
+            trackClearedAt: Date? = nil
+        ) {
+            self.sampleRate = sampleRate
+            self.bitDepth = bitDepth
+            self.formatUpdatedAt = formatUpdatedAt
+            self.title = title
+            self.artist = artist
+            self.artworkDataBase64 = artworkDataBase64
+            self.trackUpdatedAt = trackUpdatedAt
+            self.formatClearedAt = formatClearedAt
+            self.trackClearedAt = trackClearedAt
+        }
     }
 
     private static let sampleRateKey = "widgetSampleRate"
@@ -63,6 +87,8 @@ enum RateSyncWidgetConfiguration {
     private static let artistKey = "nowPlaying.artist"
     private static let artworkKey = "nowPlaying.artworkDataBase64"
     private static let updatedAtKey = "nowPlaying.updatedAt"
+    private static let formatClearedAtKey = "widgetFormatClearedAt"
+    private static let trackClearedAtKey = "nowPlaying.clearedAt"
     private static let stateFileName = "ratesync-widget-state.plist"
     private static let legacyGroupIdentifier = "group.com.biking.RateSync"
     private static let logger = Logger(subsystem: "com.biking.RateSync", category: "widget-storage")
@@ -120,6 +146,9 @@ enum RateSyncWidgetConfiguration {
         guard let state = loadState(), let updatedAt = state.trackUpdatedAt else {
             return nil
         }
+        if let clearedAt = state.trackClearedAt, clearedAt >= updatedAt {
+            return nil
+        }
         return SharedNowPlayingTrack(
             title: state.title,
             artist: state.artist,
@@ -132,6 +161,9 @@ enum RateSyncWidgetConfiguration {
         guard let state = loadState(),
               let sampleRate = state.sampleRate,
               let updatedAt = state.formatUpdatedAt else {
+            return nil
+        }
+        if let clearedAt = state.formatClearedAt, clearedAt >= updatedAt {
             return nil
         }
         return SharedAudioFormat(
@@ -157,37 +189,23 @@ enum RateSyncWidgetConfiguration {
 
     static func saveAudioFormat(sampleRate: Double, bitDepth: Int?, updatedAt: Date = Date()) {
         guard sampleRate.isFinite, sampleRate > 0 else {
-            clearAudioFormat()
+            clearAudioFormat(clearedAt: updatedAt)
             return
         }
-        var state = loadState() ?? WidgetState(
-            sampleRate: nil,
-            bitDepth: nil,
-            formatUpdatedAt: nil,
-            title: nil,
-            artist: nil,
-            artworkDataBase64: nil,
-            trackUpdatedAt: nil
-        )
+        var state = loadState() ?? WidgetState()
         state.sampleRate = sampleRate
         state.bitDepth = bitDepth
         state.formatUpdatedAt = updatedAt
+        state.formatClearedAt = nil
         saveState(state)
     }
 
-    static func clearAudioFormat() {
-        var state = loadState() ?? WidgetState(
-            sampleRate: nil,
-            bitDepth: nil,
-            formatUpdatedAt: nil,
-            title: nil,
-            artist: nil,
-            artworkDataBase64: nil,
-            trackUpdatedAt: nil
-        )
+    static func clearAudioFormat(clearedAt: Date = Date()) {
+        var state = loadState() ?? WidgetState()
         state.sampleRate = nil
         state.bitDepth = nil
         state.formatUpdatedAt = nil
+        state.formatClearedAt = clearedAt
         saveState(state)
     }
 
@@ -197,36 +215,22 @@ enum RateSyncWidgetConfiguration {
         artworkDataBase64: String?,
         updatedAt: Date = Date()
     ) {
-        var state = loadState() ?? WidgetState(
-            sampleRate: nil,
-            bitDepth: nil,
-            formatUpdatedAt: nil,
-            title: nil,
-            artist: nil,
-            artworkDataBase64: nil,
-            trackUpdatedAt: nil
-        )
+        var state = loadState() ?? WidgetState()
         state.title = title
         state.artist = artist
         state.artworkDataBase64 = sanitizedArtworkDataBase64(artworkDataBase64)
         state.trackUpdatedAt = updatedAt
+        state.trackClearedAt = nil
         saveState(state)
     }
 
-    static func clearNowPlayingTrack() {
-        var state = loadState() ?? WidgetState(
-            sampleRate: nil,
-            bitDepth: nil,
-            formatUpdatedAt: nil,
-            title: nil,
-            artist: nil,
-            artworkDataBase64: nil,
-            trackUpdatedAt: nil
-        )
+    static func clearNowPlayingTrack(clearedAt: Date = Date()) {
+        var state = loadState() ?? WidgetState()
         state.title = nil
         state.artist = nil
         state.artworkDataBase64 = nil
         state.trackUpdatedAt = nil
+        state.trackClearedAt = clearedAt
         saveState(state)
     }
 
@@ -288,7 +292,8 @@ enum RateSyncWidgetConfiguration {
     static func mergeStates(_ states: [WidgetState]) -> WidgetState? {
         guard !states.isEmpty else { return nil }
 
-        let newestFormat = states
+        // Format resolution: compare newest set vs newest cleared
+        let newestFormatSet = states
             .filter { state in
                 guard let sampleRate = state.sampleRate,
                       sampleRate.isFinite,
@@ -300,21 +305,57 @@ enum RateSyncWidgetConfiguration {
             .max {
                 ($0.formatUpdatedAt ?? .distantPast) < ($1.formatUpdatedAt ?? .distantPast)
             }
-        let newestTrack = states
+
+        let newestFormatCleared = states
+            .filter { $0.formatClearedAt != nil }
+            .max {
+                ($0.formatClearedAt ?? .distantPast) < ($1.formatClearedAt ?? .distantPast)
+            }
+
+        let isFormatCleared: Bool = {
+            guard let clearedAt = newestFormatCleared?.formatClearedAt else { return false }
+            let setAt = newestFormatSet?.formatUpdatedAt ?? .distantPast
+            return clearedAt >= setAt
+        }()
+
+        let effectiveFormat = isFormatCleared ? nil : newestFormatSet
+        let effectiveFormatClearedAt = isFormatCleared ? newestFormatCleared?.formatClearedAt : nil
+
+        // Track resolution: compare newest set vs newest cleared
+        let newestTrackSet = states
             .filter { $0.trackUpdatedAt != nil }
             .max {
                 ($0.trackUpdatedAt ?? .distantPast) < ($1.trackUpdatedAt ?? .distantPast)
             }
+
+        let newestTrackCleared = states
+            .filter { $0.trackClearedAt != nil }
+            .max {
+                ($0.trackClearedAt ?? .distantPast) < ($1.trackClearedAt ?? .distantPast)
+            }
+
+        let isTrackCleared: Bool = {
+            guard let clearedAt = newestTrackCleared?.trackClearedAt else { return false }
+            let setAt = newestTrackSet?.trackUpdatedAt ?? .distantPast
+            return clearedAt >= setAt
+        }()
+
+        let effectiveTrack = isTrackCleared ? nil : newestTrackSet
+        let effectiveTrackClearedAt = isTrackCleared ? newestTrackCleared?.trackClearedAt : nil
+
         let merged = WidgetState(
-            sampleRate: newestFormat?.sampleRate,
-            bitDepth: newestFormat?.bitDepth,
-            formatUpdatedAt: newestFormat?.formatUpdatedAt,
-            title: newestTrack?.title,
-            artist: newestTrack?.artist,
-            artworkDataBase64: newestTrack?.artworkDataBase64,
-            trackUpdatedAt: newestTrack?.trackUpdatedAt
+            sampleRate: effectiveFormat?.sampleRate,
+            bitDepth: effectiveFormat?.bitDepth,
+            formatUpdatedAt: effectiveFormat?.formatUpdatedAt,
+            title: effectiveTrack?.title,
+            artist: effectiveTrack?.artist,
+            artworkDataBase64: effectiveTrack?.artworkDataBase64,
+            trackUpdatedAt: effectiveTrack?.trackUpdatedAt,
+            formatClearedAt: effectiveFormatClearedAt,
+            trackClearedAt: effectiveTrackClearedAt
         )
-        return merged.formatUpdatedAt != nil || merged.trackUpdatedAt != nil
+        return merged.formatUpdatedAt != nil || merged.trackUpdatedAt != nil ||
+               merged.formatClearedAt != nil || merged.trackClearedAt != nil
             ? merged
             : nil
     }
@@ -339,9 +380,12 @@ enum RateSyncWidgetConfiguration {
             title: values[titleKey] as? String,
             artist: values[artistKey] as? String,
             artworkDataBase64: sanitizedArtworkDataBase64(values[artworkKey] as? String),
-            trackUpdatedAt: values[updatedAtKey] as? Date
+            trackUpdatedAt: values[updatedAtKey] as? Date,
+            formatClearedAt: values[formatClearedAtKey] as? Date,
+            trackClearedAt: values[trackClearedAtKey] as? Date
         )
-        guard state.formatUpdatedAt != nil || state.trackUpdatedAt != nil else {
+        guard state.formatUpdatedAt != nil || state.trackUpdatedAt != nil ||
+              state.formatClearedAt != nil || state.trackClearedAt != nil else {
             return nil
         }
         return state
