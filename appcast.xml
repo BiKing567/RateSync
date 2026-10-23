@@ -6,6 +6,29 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.7 (构建 43)</title>
+            <pubDate>Fri, 23 Oct 2026 14:47:53 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.7 带来以下重要更新与稳定性修复：</p>
+                <p>RateSync 3.2.7 brings key improvements and stability fixes:</p>
+                <h4>新功能与修复 / Improvements and Fixes</h4>
+                <ul>
+                    <li>重构第三方播放器 AudioQueue 日志解析：优先提取真实解码源采样率，丢弃声卡硬件重采样输出率，统一普通与递归重试的会话过滤边界，修复网易云音乐、QQ 音乐等第三方播放器采样率误切问题。</li>
+                    <li>提升 Apple Music 真实无损解码器（ACAppleLosslessDecoder）日志优先级与时效校验，优先采纳更新的格式日志，避免受 AppleScript 静态模板值或上一首残留日志影响。</li>
+                    <li>修复桌面小组件双文件合并时清空记录丢失的问题，增加跨沙盒只读权限支持，提升小组件同步可靠性与刷新响应速度。</li>
+                    <li>优化采样率门控时序：换曲保护窗口与稳定性计时并行判断，稳定候选采样率生效耗时大幅缩短。</li>
+                    <li>Refactor AudioQueue log parsing: prioritize genuine decoded source format from AudioConverter and unify session filter boundaries across retries, fixing incorrect rate switching for third-party players (NetEase, QQ Music).</li>
+                    <li>Improve Apple Music decoder log freshness validation and prioritize ground-truth ACAppleLosslessDecoder logs over static AppleScript catalog values.</li>
+                    <li>Fix widget state persistence and prevent cleared-state resurrection during state file merges, improving refresh responsiveness.</li>
+                    <li>Optimize sample-rate gate timing: evaluate track-change guard window and stability persistence concurrently.</li>
+                </ul>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.7">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.7</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.7/RateSync-3.2.7.dmg" sparkle:version="43" sparkle:shortVersionString="3.2.7" sparkle:edSignature="tX6ffhRabQc6ii8J/K3+kSeXeIUDcmJArPNf16wrZVjb5zy9IKn0BfJu/UFo1dbHDVxABgZY0+mGCz7aGqOyBw==" length="4835544" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>RateSync 3.2.7 Beta 5（预发布测试版）</title>
             <pubDate>Sun, 18 Oct 2026 17:30:27 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
