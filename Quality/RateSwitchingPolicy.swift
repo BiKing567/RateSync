@@ -431,31 +431,66 @@ enum AppleMusicFormatPolicy {
     }
 
     /// Determines the effective sample rate for an Apple Music track.
-    /// Ground-truth decoder evidence (from ACAppleLosslessDecoder.cpp) and media format
-    /// logs (from asbdSampleRate) take precedence over the iTunes AppleScript database query
-    /// when they represent the current track, because AppleScript returns a static 44.1 kHz
-    /// template value for cloud streaming tracks.
+    ///
+    /// Confirmed current-track queries from AppleScript (or priority formats such as Dolby Atmos
+    /// / Spatial Audio) take precedence over unverified log evidence. Unverified logs from
+    /// ACAppleLosslessDecoder.cpp lack track attribution and must not override a confirmed
+    /// current-track query.
     ///
     /// Freshness & provenance validation:
-    /// - If formatEvidence is newer than decoderEvidence, formatEvidence takes precedence.
-    /// - If decoderEvidence predates trackStartedAt (e.g. leftover from previous track),
-    ///   it must not override a differing scriptRate or newer formatEvidence.
+    /// - Priority format evidence (Dolby Atmos / Spatial Audio) dictates the spatial rendering rate.
+    /// - Confirmed AppleScript current-track query rate takes precedence over unverified decoder logs.
+    /// - When the current-track query is unavailable (nil or non-positive), fallback to fresh log evidence:
+    ///   - If formatEvidence is newer than decoderEvidence, formatEvidence takes precedence.
+    ///   - If decoderEvidence is available and not stale (date >= trackStartedAt), decoderEvidence is used.
+    ///   - If decoderEvidence predates trackStartedAt (stale pre-track), prefer formatEvidence if available.
     static func effectiveSampleRate(
         scriptRate: Double?,
         decoderEvidence: CMPlayerStats?,
         formatEvidence: CMPlayerStats?,
         trackStartedAt: Date? = nil
     ) -> Double? {
+        let validScriptRate: Double? = {
+            guard let rate = scriptRate,
+                  rate.isFinite,
+                  rate > 0,
+                  rate <= RateSwitchingPolicy.maxPlausibleSampleRate else {
+                return nil
+            }
+            return rate
+        }()
         let validDecoderRate: Double? = {
-            guard let rate = decoderEvidence?.sampleRate, rate > 0 else { return nil }
+            guard let rate = decoderEvidence?.sampleRate,
+                  rate.isFinite,
+                  rate > 0,
+                  rate <= RateSwitchingPolicy.maxPlausibleSampleRate else {
+                return nil
+            }
             return rate
         }()
         let validFormatRate: Double? = {
-            guard let rate = formatEvidence?.sampleRate, rate > 0 else { return nil }
+            guard let rate = formatEvidence?.sampleRate,
+                  rate.isFinite,
+                  rate > 0,
+                  rate <= RateSwitchingPolicy.maxPlausibleSampleRate else {
+                return nil
+            }
             return rate
         }()
 
-        // 1. If formatEvidence is newer than decoderEvidence, formatEvidence takes precedence.
+        // 1. Priority formats (Dolby Atmos / Spatial Audio) take precedence.
+        if let formatEvidence = formatEvidence,
+           formatEvidence.isPriorityAppleMusicFormat,
+           let formatRate = validFormatRate {
+            return formatRate
+        }
+
+        // 2. Confirmed current-track query takes precedence over unverified decoder logs.
+        if let scriptRate = validScriptRate {
+            return scriptRate
+        }
+
+        // 3. Fallback when current-track query is unavailable.
         if let formatRate = validFormatRate,
            let formatEvidence = formatEvidence,
            let decoderEvidence = decoderEvidence,
@@ -463,7 +498,6 @@ enum AppleMusicFormatPolicy {
             return formatRate
         }
 
-        // 2. If decoderEvidence is available, verify its freshness and track boundary.
         if let decoderRate = validDecoderRate,
            let decoderEvidence = decoderEvidence {
             let isStalePreTrackEvidence: Bool = {
@@ -481,20 +515,14 @@ enum AppleMusicFormatPolicy {
                 return formatRate
             }
 
-            // If AppleScript provided a rate differing from the pre-track decoder rate,
-            // prefer the script rate for the current track.
-            if let scriptRate = scriptRate, scriptRate > 0, scriptRate != decoderRate {
-                return scriptRate
-            }
-
-            return decoderRate
+            return nil
         }
 
         if let formatRate = validFormatRate {
             return formatRate
         }
 
-        return scriptRate
+        return nil
     }
 
     static func bitDepthEvidence(

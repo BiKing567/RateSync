@@ -1088,26 +1088,6 @@ class OutputDevices: ObservableObject {
             return
         }
         appleMusicDecoderFormatEvidence = incoming
-
-        // If the decoder reports a concrete rate that differs from the currently applied rate,
-        // and belongs to the current track's playback, re-evaluate to switch to the genuine
-        // decoded lossless sample rate.
-        let isCurrentTrackEvidence: Bool = {
-            guard let currentTrackStartedAt = currentTrackStartedAt else { return true }
-            return incoming.date >= currentTrackStartedAt
-        }()
-
-        if isCurrentTrackEvidence,
-           let currentTrack,
-           let appliedRate = trackAndSample[currentTrack],
-           appliedRate != incoming.sampleRate,
-           incoming.sampleRate > 0 {
-            RateSyncLog.switching.info("[AM Decoder] decoder rate \(incoming.sampleRate, privacy: .public) differs from applied \(appliedRate, privacy: .public), re-evaluating")
-            trackAndSample.removeValue(forKey: currentTrack)
-            trackAndBitDepth.removeValue(forKey: currentTrack)
-            pendingCandidate = nil
-            switchLatestSampleRate(for: currentTrack, recursion: true, generation: currentTrackGeneration)
-        }
     }
 
     /// Classifies an AudioQueue log result for the gate.

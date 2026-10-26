@@ -831,38 +831,96 @@ final class SwitchingSupportTests: XCTestCase {
         )
     }
 
-    func testAppleMusicEffectiveSampleRatePrefersDecoderEvidenceOverAppleScript44k() {
+    func testAppleMusicEffectiveSampleRatePrefersConfirmedScriptRateOverUnverifiedLogs() {
         let decoderStat = CMPlayerStats(sampleRate: 96_000, bitDepth: 24, date: Date())
         let formatStat = CMPlayerStats(sampleRate: 48_000, bitDepth: 24, date: Date())
+        let atmosFormatStat = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true
+        )
 
-        // Decoder log (ACAppleLosslessDecoder.cpp) takes top priority
+        // Confirmed AppleScript current-track query takes precedence over unverified decoder log
         XCTAssertEqual(
             AppleMusicFormatPolicy.effectiveSampleRate(
                 scriptRate: 44_100,
                 decoderEvidence: decoderStat,
                 formatEvidence: nil
             ),
-            96_000
+            44_100
         )
 
-        // Media format log (asbdSampleRate) takes priority over static AppleScript template
+        // Confirmed AppleScript current-track query takes precedence over unverified format log
         XCTAssertEqual(
             AppleMusicFormatPolicy.effectiveSampleRate(
                 scriptRate: 44_100,
                 decoderEvidence: nil,
                 formatEvidence: formatStat
             ),
-            48_000
+            44_100
         )
 
-        // Fallback to script rate when no log evidence is available yet
+        // Priority format (Dolby Atmos) takes precedence even when AppleScript reports 44.1 kHz
         XCTAssertEqual(
             AppleMusicFormatPolicy.effectiveSampleRate(
                 scriptRate: 44_100,
                 decoderEvidence: nil,
+                formatEvidence: atmosFormatStat
+            ),
+            48_000
+        )
+
+        // Fallback to decoder log when script query is unavailable
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: nil,
+                decoderEvidence: decoderStat,
                 formatEvidence: nil
             ),
-            44_100
+            96_000
+        )
+
+        // Fallback to format log when script query is unavailable
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: nil,
+                decoderEvidence: nil,
+                formatEvidence: formatStat
+            ),
+            48_000
+        )
+
+        // Returns nil when no evidence is available
+        XCTAssertNil(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: nil,
+                decoderEvidence: nil,
+                formatEvidence: nil
+            )
+        )
+    }
+
+    func testAppleMusicConfirmed44kRateNotOverriddenByPostTrackStart48kDecoderLog() {
+        let trackStart = Date(timeIntervalSince1970: 100.0)
+        let postTrackDecoderLog = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.2) // Arrived after track start, but lacks track attribution
+        )
+
+        // Correctly switched to 44.1 kHz -> received 48 kHz decoder log -> 44.1 kHz must remain effective rate
+        let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: 44_100,
+            decoderEvidence: postTrackDecoderLog,
+            formatEvidence: nil,
+            trackStartedAt: trackStart
+        )
+        XCTAssertEqual(
+            effectiveRate,
+            44_100,
+            "Unverified 48 kHz decoder log occurring after track start must not override confirmed 44.1 kHz track query."
         )
     }
 
@@ -878,9 +936,9 @@ final class SwitchingSupportTests: XCTestCase {
             date: Date(timeIntervalSince1970: 100.1)
         )
 
-        // When formatEvidence (100.1) is newer than decoderEvidence (99.6), formatEvidence must win
+        // When formatEvidence (100.1) is newer than decoderEvidence (99.6) in fallback mode, formatEvidence must win
         let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
-            scriptRate: 96_000,
+            scriptRate: nil,
             decoderEvidence: staleDecoderStat,
             formatEvidence: newerFormatStat,
             trackStartedAt: Date(timeIntervalSince1970: 100.0)
@@ -917,24 +975,33 @@ final class SwitchingSupportTests: XCTestCase {
             date: Date(timeIntervalSince1970: 99.6) // 0.4s before track event, passes tolerance (>= 99.5)
         )
 
-        // If the true track start time (currentTrackStartedAt = 100.0) is passed, the 99.6s log
-        // is identified as pre-track evidence and does NOT override the 96 kHz script rate.
-        let correctEffectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+        // 1. Confirmed script rate (96 kHz) is always protected against unverified decoder logs
+        let scriptEffectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
             scriptRate: 96_000,
             decoderEvidence: stalePreTrackDecoderStat,
             formatEvidence: nil,
             trackStartedAt: eventDate
         )
-        XCTAssertEqual(correctEffectiveRate, 96_000, "Using the true track start time (eventDate) must prevent a 99.6s old decoder log from overriding the 96 kHz rate.")
+        XCTAssertEqual(scriptEffectiveRate, 96_000, "Confirmed script rate must never be overridden by unverified decoder logs.")
 
-        // Conversely, passing the tolerance threshold (99.5) would mistakenly treat the 99.6s log as current-track evidence.
-        let mistakenEffectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
-            scriptRate: 96_000,
+        // 2. In fallback mode (scriptRate == nil), passing true track start (100.0) correctly
+        // rejects the 99.6s log as stale pre-track evidence
+        let fallbackWithTrueStart = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: nil,
+            decoderEvidence: stalePreTrackDecoderStat,
+            formatEvidence: nil,
+            trackStartedAt: eventDate
+        )
+        XCTAssertNil(fallbackWithTrueStart, "Using true track start (eventDate) must reject pre-track decoder log from previous track tail.")
+
+        // 3. Conversely, passing tolerance threshold (99.5) in fallback mode mistakenly treats 99.6s as current-track evidence
+        let fallbackWithTolerance = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: nil,
             decoderEvidence: stalePreTrackDecoderStat,
             formatEvidence: nil,
             trackStartedAt: toleranceThreshold
         )
-        XCTAssertEqual(mistakenEffectiveRate, 44_100, "Passing the tolerance threshold would mistake pre-track log as current evidence, confirming why currentTrackStartedAt is needed.")
+        XCTAssertEqual(fallbackWithTolerance, 44_100, "Passing tolerance threshold would mistake pre-track log as current evidence, confirming why currentTrackStartedAt is needed.")
     }
 
     func testResolvesPresetRateForSpotify() {
