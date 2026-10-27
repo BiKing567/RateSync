@@ -104,7 +104,7 @@ By using RateSync, you agree that under no circumstances shall the developer or 
 RateSync is licensed under GPL-3.0.
 
 ## Like this project?
-If you appreciate the development of this app, feel free to share it with more people and help spread the word about RateSync.
+If you appreciate the development of this app, feel free to share it with more people and help spread the word about RateSync. I am currently the sole developer and tester, so it is difficult to catch every issue right away. Feedback and issue reports are very welcome—they help get problems resolved much faster!
 Thanks for using it!
 
 ## Dependencies
