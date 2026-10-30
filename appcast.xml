@@ -6,6 +6,25 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.8 (构建 44)</title>
+            <pubDate>Fri, 30 Oct 2026 11:13:03 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.8 重点优化采样率切换精度并修复切错档位的问题：</p>
+                <p>RateSync 3.2.8 optimizes sample rate switching accuracy and resolves incorrect rate switching:</p>
+                <h4>新功能与修复 / Improvements and Fixes</h4>
+                <ul>
+                    <li>优化 Apple Music 采样率切换精度，修复切错档位的问题：解决在 44.1 kHz 曲目播放时，收到未经曲目归属验证的 48 kHz 解码日志导致已生效格式锁被误清除、进而再次跳切至 48 kHz 的问题。</li>
+                    <li>规范采样率仲裁策略优先级：已确认的当前曲目查询（以及杜比全景声等高优先级格式）享有最高仲裁优先级，未经归属验证的系统解码日志仅作为兜底候选，避免冲突日志冲刷覆盖已确认的正确格式。</li>
+                    <li>Fix incorrect sample rate switching in Apple Music: prevent unverified 48 kHz decoder logs from clearing the active format lock and erroneously switching away from confirmed 44.1 kHz tracks.</li>
+                    <li>Standardize sample rate arbitration priority: confirmed current-track queries and priority formats (e.g. Dolby Atmos) now hold strict precedence, using unverified logs solely as fallback candidates.</li>
+                </ul>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.8">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.8</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.8/RateSync-3.2.8.dmg" sparkle:version="44" sparkle:shortVersionString="3.2.8" sparkle:edSignature="a5J1FjqZaofpxaYPPzjMjbx+JW6bx77xh6W9d1EkXdOtEBaKht7uAFXwQDCdYSoh+QrcYWv5HDRhpi4NLViJCQ==" length="4867456" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.7 (构建 43)</title>
             <pubDate>Fri, 23 Oct 2026 14:47:53 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
