@@ -212,11 +212,22 @@ enum AppleMusicCurrentTrackRateAction: Equatable {
     case fallbackToLogs
 }
 
+enum AppleMusicSampleRateState: Equatable {
+    case inactive
+    case waiting
+    case querying
+    case resolved(Double)
+    case fallbackToLogs
+    case notPlaying
+}
+
 enum AppleMusicCurrentTrackRatePolicy {
     /// Music can briefly expose the previous/rendering variant's rate while a
     /// high-resolution track is settling. Recheck the same track after this
     /// short cooldown instead of treating the first valid value as final.
     static let revalidationInterval: TimeInterval = 2.0
+    static let recoveryProbeInterval: TimeInterval = 2.5
+    static let maxRecoveryAttempts: Int = 2
 
     static func shouldRevalidate(lastQueriedAt: Date?, now: Date) -> Bool {
         guard let lastQueriedAt else { return true }
@@ -227,6 +238,17 @@ enum AppleMusicCurrentTrackRatePolicy {
         hasKnownCurrentTrackRate: Bool
     ) -> Bool {
         hasKnownCurrentTrackRate
+    }
+
+    static func shouldScheduleRecoveryProbe(
+        state: AppleMusicSampleRateState,
+        hasKnownCurrentTrackRate: Bool,
+        attempts: Int
+    ) -> Bool {
+        if case .fallbackToLogs = state, !hasKnownCurrentTrackRate, attempts < maxRecoveryAttempts {
+            return true
+        }
+        return false
     }
 
     static func action(
@@ -425,30 +447,104 @@ enum AppleMusicFormatPolicy {
 
     static func shouldReplaceCachedFormat(
         currentIsPriorityFormat: Bool,
-        incomingIsPriorityFormat: Bool
+        incomingIsPriorityFormat: Bool,
+        currentIsAttributedToTrack: Bool = true,
+        incomingIsNewer: Bool = false
     ) -> Bool {
-        !currentIsPriorityFormat || incomingIsPriorityFormat
+        if incomingIsPriorityFormat {
+            return true
+        }
+        if !currentIsPriorityFormat {
+            return true
+        }
+        return !currentIsAttributedToTrack && incomingIsNewer
+    }
+
+    /// Priority format evidence (Dolby Atmos / Spatial Audio) may only bypass AppleScript or
+    /// override a confirmed current-track sample rate when it is fresh for the current track
+    /// AND explicitly attributed to the current playback track.
+    static func canOverrideConfirmedTrackRate(
+        formatEvidence: CMPlayerStats?,
+        expectedTrackID: String? = nil,
+        expectedTrackTitle: String? = nil,
+        trackStartedAt: Date?,
+        isAttributedToCurrentTrack: Bool = false
+    ) -> Bool {
+        guard let formatEvidence, formatEvidence.isPriorityAppleMusicFormat else {
+            return false
+        }
+        if let trackStartedAt, formatEvidence.date < trackStartedAt {
+            return false
+        }
+        return isAttributedToCurrentTrack
+            || formatEvidence.isAttributed(trackID: expectedTrackID, title: expectedTrackTitle)
+    }
+
+    /// Filters parsed Apple Music console logs for fallback resolution.
+    ///
+    /// - Explicitly mismatched logs (carrying a non-private identifier for another track) are always rejected.
+    /// - Unattributed high-level format logs (`isAppleMusicFormat` with no identifier or `<private>`) must not
+    ///   predate `trackStartedAt`, preventing stale Atmos/format logs from a previous track's tail from entering.
+    /// - Decoder logs (`!isAppleMusicFormat`) and explicitly matched format logs may use `toleranceThreshold`
+    ///   (`lastTrackChangeDate`, slightly before the MediaRemote notification arrival time) because
+    ///   a new track often begins decoding slightly before the track-change notification arrives.
+    static func filterFallbackLogs(
+        _ rawStats: [CMPlayerStats],
+        expectedTrackID: String? = nil,
+        expectedTrackTitle: String? = nil,
+        trackStartedAt: Date?,
+        toleranceThreshold: Date?
+    ) -> [CMPlayerStats] {
+        rawStats.filter { stat in
+            switch stat.attribution(trackID: expectedTrackID, title: expectedTrackTitle) {
+            case .mismatched:
+                return false
+            case .matched:
+                if let toleranceThreshold {
+                    return stat.date >= toleranceThreshold
+                }
+                if let trackStartedAt {
+                    return stat.date >= trackStartedAt
+                }
+                return true
+            case .unattributed:
+                if stat.isAppleMusicFormat, let trackStartedAt {
+                    return stat.date >= trackStartedAt
+                }
+                if let toleranceThreshold {
+                    return stat.date >= toleranceThreshold
+                }
+                if let trackStartedAt {
+                    return stat.date >= trackStartedAt
+                }
+                return true
+            }
+        }
     }
 
     /// Determines the effective sample rate for an Apple Music track.
     ///
-    /// Confirmed current-track queries from AppleScript (or priority formats such as Dolby Atmos
-    /// / Spatial Audio) take precedence over unverified log evidence. Unverified logs from
-    /// ACAppleLosslessDecoder.cpp lack track attribution and must not override a confirmed
-    /// current-track query.
+    /// Confirmed current-track queries from AppleScript take precedence over unattributed log evidence.
+    /// Priority format logs (Dolby Atmos / Spatial Audio) may only override a confirmed `scriptRate`
+    /// when they are both fresh and attributed to the current track.
     ///
     /// Freshness & provenance validation:
-    /// - Priority format evidence (Dolby Atmos / Spatial Audio) dictates the spatial rendering rate.
-    /// - Confirmed AppleScript current-track query rate takes precedence over unverified decoder logs.
+    /// - Attributed priority format evidence (Dolby Atmos / Spatial Audio) dictates the spatial rendering rate.
+    /// - Confirmed AppleScript current-track query rate takes precedence over unattributed Atmos or decoder logs.
+    /// - Evidence carrying a known mismatched track identifier is always excluded.
     /// - When the current-track query is unavailable (nil or non-positive), fallback to fresh log evidence:
-    ///   - If formatEvidence is newer than decoderEvidence, formatEvidence takes precedence.
-    ///   - If decoderEvidence is available and not stale (date >= trackStartedAt), decoderEvidence is used.
-    ///   - If decoderEvidence predates trackStartedAt (stale pre-track), prefer formatEvidence if available.
+    ///   - If both formatEvidence and decoderEvidence are valid for the current window, the newer one takes precedence.
+    ///   - Decoder evidence may use `decoderToleranceThreshold` (`lastTrackChangeDate`) when provided so
+    ///     pre-notification decoding of the new track is not lost.
     static func effectiveSampleRate(
         scriptRate: Double?,
         decoderEvidence: CMPlayerStats?,
         formatEvidence: CMPlayerStats?,
-        trackStartedAt: Date? = nil
+        trackStartedAt: Date? = nil,
+        expectedTrackID: String? = nil,
+        expectedTrackTitle: String? = nil,
+        isFormatAttributedToCurrentTrack: Bool = false,
+        decoderToleranceThreshold: Date? = nil
     ) -> Double? {
         let validScriptRate: Double? = {
             guard let rate = scriptRate,
@@ -460,7 +556,9 @@ enum AppleMusicFormatPolicy {
             return rate
         }()
         let validDecoderRate: Double? = {
-            guard let rate = decoderEvidence?.sampleRate,
+            guard let decoderEvidence,
+                  !decoderEvidence.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle),
+                  let rate = Optional(decoderEvidence.sampleRate),
                   rate.isFinite,
                   rate > 0,
                   rate <= RateSwitchingPolicy.maxPlausibleSampleRate else {
@@ -469,7 +567,9 @@ enum AppleMusicFormatPolicy {
             return rate
         }()
         let validFormatRate: Double? = {
-            guard let rate = formatEvidence?.sampleRate,
+            guard let formatEvidence,
+                  !formatEvidence.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle),
+                  let rate = Optional(formatEvidence.sampleRate),
                   rate.isFinite,
                   rate > 0,
                   rate <= RateSwitchingPolicy.maxPlausibleSampleRate else {
@@ -478,59 +578,140 @@ enum AppleMusicFormatPolicy {
             return rate
         }()
 
-        // 1. Priority formats (Dolby Atmos / Spatial Audio) take precedence.
-        if let formatEvidence = formatEvidence,
-           formatEvidence.isPriorityAppleMusicFormat,
-           let formatRate = validFormatRate {
+        let isAttributedFormat = isFormatAttributedToCurrentTrack
+            || (formatEvidence?.isAttributed(trackID: expectedTrackID, title: expectedTrackTitle) == true)
+
+        let isStalePreTrackFormat: Bool = {
+            if isAttributedFormat { return false }
+            guard let trackStartedAt = trackStartedAt, let formatEvidence = formatEvidence else { return false }
+            return formatEvidence.date < trackStartedAt
+        }()
+
+        // 1. Fresh priority formats (Dolby Atmos / Spatial Audio) attributed to the current track take precedence.
+        if canOverrideConfirmedTrackRate(
+            formatEvidence: formatEvidence,
+            expectedTrackID: expectedTrackID,
+            expectedTrackTitle: expectedTrackTitle,
+            trackStartedAt: trackStartedAt,
+            isAttributedToCurrentTrack: isFormatAttributedToCurrentTrack
+        ), let formatRate = validFormatRate {
             return formatRate
         }
 
-        // 2. Confirmed current-track query takes precedence over unverified decoder logs.
+        // 2. Confirmed current-track query takes precedence over unattributed logs or stale pre-track logs.
         if let scriptRate = validScriptRate {
             return scriptRate
         }
 
         // 3. Fallback when current-track query is unavailable.
+        let decoderBoundary = decoderToleranceThreshold ?? trackStartedAt
+        let isStalePreTrackDecoder: Bool = {
+            guard let decoderBoundary, let decoderEvidence else { return false }
+            return decoderEvidence.date < decoderBoundary
+        }()
+
         if let formatRate = validFormatRate,
            let formatEvidence = formatEvidence,
-           let decoderEvidence = decoderEvidence,
-           formatEvidence.date > decoderEvidence.date {
+           !isStalePreTrackFormat {
+            if let decoderRate = validDecoderRate,
+               let decoderEvidence = decoderEvidence,
+               !isStalePreTrackDecoder {
+                return formatEvidence.date >= decoderEvidence.date ? formatRate : decoderRate
+            }
             return formatRate
         }
 
         if let decoderRate = validDecoderRate,
-           let decoderEvidence = decoderEvidence {
-            let isStalePreTrackEvidence: Bool = {
-                guard let trackStartedAt = trackStartedAt else { return false }
-                return decoderEvidence.date < trackStartedAt
-            }()
-
-            if !isStalePreTrackEvidence {
-                return decoderRate
-            }
-
-            // Decoder evidence predated trackStartedAt.
-            // If formatEvidence is available for the new track, prefer formatEvidence.
-            if let formatRate = validFormatRate {
-                return formatRate
-            }
-
-            return nil
+           !isStalePreTrackDecoder {
+            return decoderRate
         }
 
-        if let formatRate = validFormatRate {
-            return formatRate
+        return nil
+    }
+
+    /// Selects the preferred log evidence and its `RateSource` during Apple Music log fallback.
+    ///
+    /// - Explicitly mismatched logs (`.mismatched`) are always rejected.
+    /// - Unattributed format logs predating `trackStartedAt` are rejected.
+    /// - Explicitly matched evidence takes precedence over unattributed evidence; otherwise the newer log wins.
+    static func preferredFallbackEvidence(
+        formatEvidence: CMPlayerStats?,
+        decoderEvidence: CMPlayerStats?,
+        expectedTrackID: String? = nil,
+        expectedTrackTitle: String? = nil,
+        trackStartedAt: Date? = nil,
+        decoderToleranceThreshold: Date? = nil
+    ) -> (stat: CMPlayerStats, source: RateSource)? {
+        let validFormat: CMPlayerStats? = {
+            guard let formatEvidence else { return nil }
+            switch formatEvidence.attribution(trackID: expectedTrackID, title: expectedTrackTitle) {
+            case .mismatched:
+                return nil
+            case .matched:
+                if let boundary = decoderToleranceThreshold ?? trackStartedAt, formatEvidence.date < boundary {
+                    return nil
+                }
+                return formatEvidence
+            case .unattributed:
+                if let trackStartedAt, formatEvidence.date < trackStartedAt {
+                    return nil
+                }
+                return formatEvidence
+            }
+        }()
+
+        let validDecoder: CMPlayerStats? = {
+            guard let decoderEvidence else { return nil }
+            guard !decoderEvidence.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle) else {
+                return nil
+            }
+            if let boundary = decoderToleranceThreshold ?? trackStartedAt, decoderEvidence.date < boundary {
+                return nil
+            }
+            return decoderEvidence
+        }()
+
+        if let validFormat, let validDecoder {
+            let formatMatched = validFormat.isAttributed(trackID: expectedTrackID, title: expectedTrackTitle)
+            let decoderMatched = validDecoder.isAttributed(trackID: expectedTrackID, title: expectedTrackTitle)
+            if formatMatched && !decoderMatched {
+                return (validFormat, .appleMusicFormatLog)
+            }
+            if decoderMatched && !formatMatched {
+                return (validDecoder, .decoderLog)
+            }
+            if validDecoder.date > validFormat.date {
+                return (validDecoder, .decoderLog)
+            }
+            return (validFormat, .appleMusicFormatLog)
         }
 
+        if let validFormat {
+            return (validFormat, .appleMusicFormatLog)
+        }
+        if let validDecoder {
+            return (validDecoder, .decoderLog)
+        }
         return nil
     }
 
     static func bitDepthEvidence(
         formatEvidence: CMPlayerStats?,
         fallbackEvidence: CMPlayerStats?,
-        decoderEvidence: CMPlayerStats? = nil
+        decoderEvidence: CMPlayerStats? = nil,
+        expectedTrackID: String? = nil,
+        expectedTrackTitle: String? = nil
     ) -> Int? {
-        formatEvidence?.bitDepth ?? decoderEvidence?.bitDepth ?? fallbackEvidence?.bitDepth
+        let validFormat = formatEvidence.flatMap {
+            $0.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle) ? nil : $0
+        }
+        let validDecoder = decoderEvidence.flatMap {
+            $0.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle) ? nil : $0
+        }
+        let validFallback = fallbackEvidence.flatMap {
+            $0.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle) ? nil : $0
+        }
+        return validFormat?.bitDepth ?? validDecoder?.bitDepth ?? validFallback?.bitDepth
     }
 }
 
@@ -619,3 +800,78 @@ enum LogStatsCachePolicy {
         }
     }
 }
+
+enum DeviceFormatVerification {
+    /// Evaluates whether a requested sample rate was successfully applied.
+    ///
+    /// Driver nominal sample rate must be reported, must indicate success,
+    /// and must match the target within nominal tolerance (< 1.0 Hz).
+    /// Measured clock rate (`actualSampleRate`) is intentionally not used because
+    /// crystal oscillator jitter (e.g. 47999.8 Hz) would falsely register as failure.
+    static func isSampleRateApplied(
+        targetRate: Float64,
+        nominalRate: Float64?,
+        rateSetOk: Bool
+    ) -> Bool {
+        guard rateSetOk, let nominalRate = nominalRate else { return false }
+        return abs(nominalRate - targetRate) < 1.0
+    }
+
+    /// Evaluates whether a requested physical stream format (sample rate + bit depth)
+    /// was successfully applied to the device stream.
+    ///
+    /// Requires readback of the stream's physical format. Both sample rate and
+    /// bit depth must match the target format. If driver nominal rate is also available,
+    /// it must also match within tolerance.
+    static func isPhysicalFormatApplied(
+        targetRate: Float64,
+        targetBitDepth: UInt32,
+        streamPhysicalFormat: AudioStreamBasicDescription?,
+        nominalRate: Float64?
+    ) -> Bool {
+        guard let streamPhysicalFormat = streamPhysicalFormat else {
+            return false
+        }
+        let streamRateMatches = abs(streamPhysicalFormat.mSampleRate - targetRate) < 1.0
+        let bitDepthMatches = streamPhysicalFormat.mBitsPerChannel == targetBitDepth
+        guard streamRateMatches && bitDepthMatches else {
+            return false
+        }
+        if let nominalRate = nominalRate, abs(nominalRate - targetRate) >= 1.0 {
+            return false
+        }
+        return true
+    }
+
+    struct FallbackFormatState: Equatable {
+        let sampleRate: Float64?
+        let bitDepth: Int?
+
+        var hasConfirmedSampleRate: Bool {
+            sampleRate != nil
+        }
+    }
+
+    /// Resolves the fallback state to record when applying a format to an audio device fails.
+    ///
+    /// Never falls back to the rejected target rate: if the device's current format cannot be
+    /// read back and there is no previously confirmed sample rate, `sampleRate` remains `nil`
+    /// (unconfirmed) so subsequent polling will retry applying the target format.
+    static func fallbackStateOnFailure(
+        nominalRate: Float64?,
+        streamPhysicalFormat: AudioStreamBasicDescription?,
+        currentOutputBitDepth: Int?,
+        previousSampleRate: Float64?,
+        previousBitDepth: Int?
+    ) -> FallbackFormatState {
+        let validNominal = nominalRate.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        let validStreamRate = streamPhysicalFormat.map(\.mSampleRate).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        let validPreviousRate = previousSampleRate.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        let fallbackRate = validNominal ?? validStreamRate ?? validPreviousRate
+
+        let validStreamDepth = streamPhysicalFormat.map { Int($0.mBitsPerChannel) }.flatMap { $0 > 0 ? $0 : nil }
+        let fallbackBitDepth = validStreamDepth ?? currentOutputBitDepth ?? previousBitDepth
+        return FallbackFormatState(sampleRate: fallbackRate, bitDepth: fallbackBitDepth)
+    }
+}
+

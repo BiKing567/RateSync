@@ -9,6 +9,12 @@ import Foundation
 import OSLog
 import Sweep
 
+enum TrackAttribution: Equatable {
+    case matched
+    case mismatched
+    case unattributed
+}
+
 struct CMPlayerStats {
     let sampleRate: Double // Hz
     let bitDepth: Int?
@@ -16,9 +22,19 @@ struct CMPlayerStats {
     let isAppleMusicFormat: Bool
     let isDolbyAtmos: Bool
     let isSpatialAudio: Bool
+    let trackIdentifier: String?
 
     var isPriorityAppleMusicFormat: Bool {
         isDolbyAtmos || isSpatialAudio
+    }
+
+    var normalizedTrackIdentifier: String? {
+        guard let raw = trackIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              raw.caseInsensitiveCompare("<private>") != .orderedSame else {
+            return nil
+        }
+        return raw
     }
 
     init(
@@ -27,7 +43,8 @@ struct CMPlayerStats {
         date: Date,
         isAppleMusicFormat: Bool = false,
         isDolbyAtmos: Bool = false,
-        isSpatialAudio: Bool = false
+        isSpatialAudio: Bool = false,
+        trackIdentifier: String? = nil
     ) {
         self.sampleRate = sampleRate
         self.bitDepth = bitDepth
@@ -35,6 +52,41 @@ struct CMPlayerStats {
         self.isAppleMusicFormat = isAppleMusicFormat
         self.isDolbyAtmos = isDolbyAtmos
         self.isSpatialAudio = isSpatialAudio
+        self.trackIdentifier = trackIdentifier
+    }
+
+    func attribution(trackID: String?, title: String? = nil) -> TrackAttribution {
+        guard let raw = normalizedTrackIdentifier else {
+            return .unattributed
+        }
+        let normalizedID: String? = {
+            guard let trimmed = trackID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !trimmed.isEmpty else { return nil }
+            return trimmed
+        }()
+        let normalizedTitle: String? = {
+            guard let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !trimmed.isEmpty else { return nil }
+            return trimmed
+        }()
+        guard normalizedID != nil || normalizedTitle != nil else {
+            return .unattributed
+        }
+        if let normalizedID, raw.caseInsensitiveCompare(normalizedID) == .orderedSame {
+            return .matched
+        }
+        if let normalizedTitle, raw.caseInsensitiveCompare(normalizedTitle) == .orderedSame {
+            return .matched
+        }
+        return .mismatched
+    }
+
+    func isAttributed(trackID: String?, title: String? = nil) -> Bool {
+        attribution(trackID: trackID, title: title) == .matched
+    }
+
+    func isMismatched(trackID: String?, title: String? = nil) -> Bool {
+        attribution(trackID: trackID, title: title) == .mismatched
     }
 
     static func sampleRateOnly(
@@ -63,7 +115,8 @@ class CMPlayerParser {
                 date: evidence.date,
                 isAppleMusicFormat: true,
                 isDolbyAtmos: evidence.isDolbyAtmos,
-                isSpatialAudio: evidence.isSpatialAudio
+                isSpatialAudio: evidence.isSpatialAudio,
+                trackIdentifier: evidence.trackIdentifier
             )
         }
         return highLevelStats + parseCoreAudioConsoleLogs(entries)

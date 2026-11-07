@@ -6,6 +6,29 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.9 (构建 45)</title>
+            <pubDate>Sat, 07 Nov 2026 16:40:39 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.9 进一步优化采样率与位深切换准确性，修复多条残留切错档位路径：</p>
+                <p>RateSync 3.2.9 further improves sample rate and bit depth switching accuracy and fixes remaining mis-switching paths:</p>
+                <h4>新功能与修复 / Improvements and Fixes</h4>
+                <ul>
+                    <li>严格校验 Apple Music 空间音频与杜比全景声日志的曲目归属：采用完整标识匹配与三态归属判定（匹配 / 明确不匹配 / 无标识），防止上一首残留或无关曲目的 Atmos 日志覆盖已确认的采样率。</li>
+                    <li>优化 AppleScript 查询回退与恢复机制：首次查询超时进入日志回退后自动调度恢复探测；日志回退在剔除明确不匹配日志的同时，保留切歌通知前容差窗口内的新曲目抢先解码日志，避免漏切。</li>
+                    <li>增强外置 DAC 与音频设备切换结果校验：改用标称采样率（nominal sample rate）及物理流格式回读验证采样率与位深，避免正常时钟晶振偏差误判失败；当设备拒绝切换且读回为空时保留未确认状态以便后续重试。</li>
+                    <li>Strict track attribution for Apple Music Dolby Atmos and Spatial Audio logs: require exact identifier matching and three-state attribution (matched / mismatched / unattributed) so unrelated or stale Atmos logs cannot override confirmed sample rates.</li>
+                    <li>Improved AppleScript fallback and recovery: automatically probe for AppleScript recovery after initial query timeouts, exclude explicitly mismatched logs during fallback, and retain pre-notification decoder logs within the track-change tolerance window.</li>
+                    <li>Reliable audio device format verification: verify applied sample rate and bit depth via nominal sample rate and physical stream readback (preventing false failures from normal clock drift), and keep state unconfirmed on device rejection so subsequent polls retry.</li>
+                </ul>
+                <p>如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！</p>
+                <p>If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.9">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.9</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.9/RateSync-3.2.9.dmg" sparkle:version="45" sparkle:shortVersionString="3.2.9" sparkle:edSignature="KMf/RNuZFWNIcOicHfflMDPbdg44nfwUrnd4brdIMORpHxddU0ZHhkGpCw23PyXDf3yKOpImr9VkkpwT1mgfBA==" length="4863511" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.8 (构建 44)</title>
             <pubDate>Fri, 30 Oct 2026 11:13:03 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

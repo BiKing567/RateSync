@@ -15,15 +15,6 @@ import MediaRemoteAdapter
 import WidgetKit
 
 class OutputDevices: ObservableObject {
-    private enum AppleMusicSampleRateState: Equatable {
-        case inactive
-        case waiting
-        case querying
-        case resolved(Double)
-        case fallbackToLogs
-        case notPlaying
-    }
-
     @Published var selectedOutputDevice: AudioDevice? // auto if nil
     @Published var defaultOutputDevice: AudioDevice?
     @Published var outputDevices = [AudioDevice]()
@@ -75,6 +66,8 @@ class OutputDevices: ObservableObject {
     private var appleMusicAtmosProbeCompletedGeneration: UInt64?
     private var appleMusicAtmosProbeLastCompletedAt: Date?
     private var appleMusicResumeRetryWorkItem: DispatchWorkItem?
+    private var appleMusicRecoveryWorkItem: DispatchWorkItem?
+    private var appleMusicRecoveryAttempts: Int = 0
     // Cap on retained per-track results, so long listening sessions cannot
     // grow the caches without bound (one entry per distinct MediaTrack).
     private static let maxCachedTracks = 200
@@ -197,6 +190,7 @@ class OutputDevices: ObservableObject {
         pollCancellable?.cancel()
         enableBitDepthDetectionCancellable?.cancel()
         appleMusicResumeRetryWorkItem?.cancel()
+        appleMusicRecoveryWorkItem?.cancel()
         //timer.upstream.connect().cancel()
     }
     
@@ -398,18 +392,30 @@ class OutputDevices: ObservableObject {
         guard let requestTrack else { return }
 
         // Apple Music's current-track AppleScript value is the primary rate
-        // evidence. Atmos and active spatial-rendering logs remain higher-priority overrides.
+        // evidence. Atmos and active spatial-rendering logs remain higher-priority overrides
+        // only when attributed to the current playback track.
         if isAppleMusicSource {
             scheduleAppleMusicAtmosProbeIfNeeded(expectedTrack: requestTrack, generation: requestGeneration)
             if let atmosphere = appleMusicFormatEvidence, atmosphere.isPriorityAppleMusicFormat {
-                applyStats(
-                    [atmosphere],
-                    source: .appleMusicFormatLog,
-                    expectedTrack: requestTrack,
-                    generation: requestGeneration,
-                    recursion: recursion
-                )
-                return
+                let isFresh = currentTrackStartedAt.map { atmosphere.date >= $0 } ?? true
+                let isMismatched = atmosphere.isMismatched(trackID: requestTrack.id, title: requestTrack.title)
+                if isMismatched || (!isFresh && !atmosphere.isAttributed(trackID: requestTrack.id, title: requestTrack.title)) {
+                    appleMusicFormatEvidence = nil
+                } else if AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+                    formatEvidence: atmosphere,
+                    expectedTrackID: requestTrack.id,
+                    expectedTrackTitle: requestTrack.title,
+                    trackStartedAt: currentTrackStartedAt
+                ) {
+                    applyStats(
+                        [atmosphere],
+                        source: .appleMusicFormatLog,
+                        expectedTrack: requestTrack,
+                        generation: requestGeneration,
+                        recursion: recursion
+                    )
+                    return
+                }
             }
             resolveAppleMusicCurrentTrackSampleRate(
                 expectedTrack: requestTrack,
@@ -690,7 +696,10 @@ class OutputDevices: ObservableObject {
             scriptRate: sampleRate,
             decoderEvidence: appleMusicDecoderFormatEvidence,
             formatEvidence: appleMusicFormatEvidence,
-            trackStartedAt: currentTrackStartedAt
+            trackStartedAt: currentTrackStartedAt,
+            expectedTrackID: expectedTrack.id,
+            expectedTrackTitle: expectedTrack.title,
+            decoderToleranceThreshold: lastTrackChangeDate
         ) ?? sampleRate
 
         if effectiveRate.isFinite,
@@ -711,8 +720,16 @@ class OutputDevices: ObservableObject {
                 "[AM CurrentTrackRate] replacing stale same-track rate \(cachedSampleRate, privacy: .public) with \(effectiveRate, privacy: .public)"
             )
         }
-        let atmosphere = appleMusicFormatEvidence.flatMap {
-            $0.isPriorityAppleMusicFormat ? $0 : nil
+        let atmosphere = appleMusicFormatEvidence.flatMap { stat -> CMPlayerStats? in
+            guard AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+                formatEvidence: stat,
+                expectedTrackID: expectedTrack.id,
+                expectedTrackTitle: expectedTrack.title,
+                trackStartedAt: currentTrackStartedAt
+            ) else {
+                return nil
+            }
+            return stat
         }
         let action = AppleMusicCurrentTrackRatePolicy.action(
             hasCurrentTrackRate: effectiveRate.isFinite && effectiveRate > 0,
@@ -755,7 +772,9 @@ class OutputDevices: ObservableObject {
             bitDepth: AppleMusicFormatPolicy.bitDepthEvidence(
                 formatEvidence: appleMusicFormatEvidence,
                 fallbackEvidence: appleMusicFallbackFormat,
-                decoderEvidence: appleMusicDecoderFormatEvidence
+                decoderEvidence: appleMusicDecoderFormatEvidence,
+                expectedTrackID: expectedTrack.id,
+                expectedTrackTitle: expectedTrack.title
             )
         )
         applyStats(
@@ -806,6 +825,42 @@ class OutputDevices: ObservableObject {
         guard isExpectedTrackCurrent(expectedTrack, generation: generation) else { return }
         appleMusicFallbackAttemptedForTrack = true
         runLogChain(expectedTrack: expectedTrack, generation: generation, recursion: recursion)
+        scheduleAppleMusicRecoveryProbeIfNeeded(expectedTrack: expectedTrack, generation: generation)
+    }
+
+    private func scheduleAppleMusicRecoveryProbeIfNeeded(expectedTrack: MediaTrack, generation: UInt64) {
+        guard AppleMusicCurrentTrackRatePolicy.shouldScheduleRecoveryProbe(
+            state: appleMusicSampleRateState,
+            hasKnownCurrentTrackRate: appleMusicLastKnownCurrentTrackSampleRate != nil,
+            attempts: appleMusicRecoveryAttempts
+        ) else { return }
+        guard appleMusicRecoveryWorkItem == nil else { return }
+
+        let attempts = appleMusicRecoveryAttempts + 1
+        appleMusicRecoveryAttempts = attempts
+        let delay = AppleMusicCurrentTrackRatePolicy.recoveryProbeInterval
+        RateSyncLog.switching.info("[AM RecoveryProbe] scheduling recovery attempt \(attempts, privacy: .public)/\(AppleMusicCurrentTrackRatePolicy.maxRecoveryAttempts, privacy: .public) in \(delay, privacy: .public)s")
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.appleMusicRecoveryWorkItem = nil
+            guard self.isExpectedTrackCurrent(expectedTrack, generation: generation),
+                  self.isAppleMusicSource,
+                  case .fallbackToLogs = self.appleMusicSampleRateState,
+                  self.appleMusicLastKnownCurrentTrackSampleRate == nil else { return }
+
+            RateSyncLog.switching.info("[AM RecoveryProbe] attempting to recover primary AppleScript source (attempt \(attempts, privacy: .public))")
+            self.appleMusicSampleRateState = .waiting
+            self.appleMusicFallbackAttemptedForTrack = false
+            self.appleMusicSampleRateWaitStartedAt = Date()
+            self.resolveAppleMusicCurrentTrackSampleRate(
+                expectedTrack: expectedTrack,
+                generation: generation,
+                recursion: true
+            )
+        }
+        appleMusicRecoveryWorkItem = workItem
+        processQueue.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     private func scheduleAppleMusicAtmosProbeIfNeeded(expectedTrack: MediaTrack, generation: UInt64) {
@@ -836,26 +891,42 @@ class OutputDevices: ObservableObject {
                 guard let self else { return }
                 guard self.isExpectedTrackCurrent(expectedTrack, generation: generation),
                       self.isAppleMusicSource else { return }
-                self.rememberAppleMusicFormat(from: stats)
-                self.rememberAppleMusicDecoderFormat(from: stats)
+                self.rememberAppleMusicFormat(from: stats, for: expectedTrack)
+                self.rememberAppleMusicDecoderFormat(from: stats, for: expectedTrack)
                 if let preferredFormat = self.appleMusicFormatEvidence,
                    preferredFormat.isPriorityAppleMusicFormat {
-                    self.appleMusicAtmosProbeCompletedGeneration = generation
-                    self.appleMusicAtmosProbeScheduledGeneration = nil
-                    self.appleMusicAtmosProbeLastCompletedAt = Date()
-                    guard self.appleMusicSampleRateState != .notPlaying else { return }
-
-                    let elapsed = Date().timeIntervalSince(probeStartedAt)
-                    let evidenceType = preferredFormat.isDolbyAtmos ? "DolbyAtmos" : "spatialAudio"
-                    RateSyncLog.switching.info("[AM AtmosEvidence] track=\(trackID, privacy: .public) source=AppleMusicLog type=\(evidenceType, privacy: .public) sampleRate=\(preferredFormat.sampleRate, privacy: .public) elapsed=\(elapsed, privacy: .public)s")
-                    self.applyStats(
-                        [preferredFormat],
-                        source: .appleMusicFormatLog,
-                        expectedTrack: expectedTrack,
-                        generation: generation,
-                        recursion: false
+                    let isMismatched = preferredFormat.isMismatched(trackID: expectedTrack.id, title: expectedTrack.title)
+                    if isMismatched || (self.currentTrackStartedAt.map { preferredFormat.date < $0 } == true && !preferredFormat.isAttributed(trackID: expectedTrack.id, title: expectedTrack.title)) {
+                        self.appleMusicFormatEvidence = nil
+                        return
+                    }
+                    let canOverrideConfirmed = AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+                        formatEvidence: preferredFormat,
+                        expectedTrackID: expectedTrack.id,
+                        expectedTrackTitle: expectedTrack.title,
+                        trackStartedAt: self.currentTrackStartedAt
                     )
-                    return
+                    let canUseUnattributedFallback = (self.appleMusicSampleRateState == .fallbackToLogs)
+                        && (self.appleMusicLastKnownCurrentTrackSampleRate == nil)
+                        && !isMismatched
+                    if canOverrideConfirmed || canUseUnattributedFallback {
+                        self.appleMusicAtmosProbeCompletedGeneration = generation
+                        self.appleMusicAtmosProbeScheduledGeneration = nil
+                        self.appleMusicAtmosProbeLastCompletedAt = Date()
+                        guard self.appleMusicSampleRateState != .notPlaying else { return }
+
+                        let elapsed = Date().timeIntervalSince(probeStartedAt)
+                        let evidenceType = preferredFormat.isDolbyAtmos ? "DolbyAtmos" : "spatialAudio"
+                        RateSyncLog.switching.info("[AM AtmosEvidence] track=\(trackID, privacy: .public) source=AppleMusicLog type=\(evidenceType, privacy: .public) sampleRate=\(preferredFormat.sampleRate, privacy: .public) elapsed=\(elapsed, privacy: .public)s")
+                        self.applyStats(
+                            [preferredFormat],
+                            source: .appleMusicFormatLog,
+                            expectedTrack: expectedTrack,
+                            generation: generation,
+                            recursion: false
+                        )
+                        return
+                    }
                 }
 
                 let elapsed = Date().timeIntervalSince(probeStartedAt)
@@ -977,14 +1048,38 @@ class OutputDevices: ObservableObject {
     /// Log-based rate resolution plus the preset fallback, run after the
     /// MediaRemote probe reported nothing (or was skipped).
     private func runLogChain(expectedTrack: MediaTrack?, generation: UInt64, recursion: Bool) {
-        let logStats = self.statsFromLogs(recursion: recursion)
+        let rawLogStats = self.statsFromLogs(recursion: recursion)
+        let targetTrack = expectedTrack ?? currentTrack
+        let toleranceThreshold = recursion ? lastTrackChangeDate?.addingTimeInterval(-1.5) : lastTrackChangeDate
+        let logStats: [CMPlayerStats]
         if isAppleMusicSource {
-            rememberAppleMusicFormat(from: logStats)
-            rememberAppleMusicDecoderFormat(from: logStats)
+            logStats = AppleMusicFormatPolicy.filterFallbackLogs(
+                rawLogStats,
+                expectedTrackID: targetTrack?.id,
+                expectedTrackTitle: targetTrack?.title,
+                trackStartedAt: currentTrackStartedAt,
+                toleranceThreshold: toleranceThreshold
+            )
+        } else {
+            logStats = rawLogStats
         }
+        if isAppleMusicSource {
+            rememberAppleMusicFormat(from: logStats, for: targetTrack)
+            rememberAppleMusicDecoderFormat(from: logStats, for: targetTrack)
+        }
+        let preferredFallback = isAppleMusicSource
+            ? AppleMusicFormatPolicy.preferredFallbackEvidence(
+                formatEvidence: appleMusicFormatEvidence,
+                decoderEvidence: appleMusicDecoderFormatEvidence,
+                expectedTrackID: targetTrack?.id,
+                expectedTrackTitle: targetTrack?.title,
+                trackStartedAt: currentTrackStartedAt,
+                decoderToleranceThreshold: toleranceThreshold
+            )
+            : nil
         let appleMusicResolution = isAppleMusicSource
             ? AppleMusicFormatPolicy.resolution(
-                hasLogEvidence: appleMusicFormatEvidence != nil,
+                hasLogEvidence: preferredFallback != nil,
                 hasLogStats: !logStats.isEmpty,
                 hasCachedFallback: appleMusicFallbackFormat != nil,
                 hasAttemptedFallback: appleMusicFallbackAttemptedForTrack,
@@ -992,10 +1087,10 @@ class OutputDevices: ObservableObject {
             )
             : .noFormat
         if appleMusicResolution == .logEvidence,
-           let appleMusicFormatEvidence {
+           let preferredFallback {
             applyStats(
-                [appleMusicFormatEvidence],
-                source: .appleMusicFormatLog,
+                [preferredFallback.stat],
+                source: preferredFallback.source,
                 expectedTrack: expectedTrack,
                 generation: generation,
                 recursion: recursion
@@ -1062,24 +1157,63 @@ class OutputDevices: ObservableObject {
         }
     }
 
-    private func rememberAppleMusicFormat(from stats: [CMPlayerStats]) {
-        guard let incoming = stats.first(where: \CMPlayerStats.isDolbyAtmos)
-                ?? stats.first(where: \CMPlayerStats.isSpatialAudio)
-                ?? stats.first(where: \CMPlayerStats.isAppleMusicFormat) else {
+    private func rememberAppleMusicFormat(from stats: [CMPlayerStats], for track: MediaTrack? = nil) {
+        let targetTrack = track ?? currentTrack
+        if let existing = appleMusicFormatEvidence,
+           existing.isMismatched(trackID: targetTrack?.id, title: targetTrack?.title) {
+            appleMusicFormatEvidence = nil
+        }
+        let trackStartedAt = currentTrackStartedAt
+        let validStats = stats.filter { stat in
+            guard stat.isAppleMusicFormat else { return false }
+            switch stat.attribution(trackID: targetTrack?.id, title: targetTrack?.title) {
+            case .mismatched:
+                return false
+            case .matched:
+                return true
+            case .unattributed:
+                guard let trackStartedAt else { return true }
+                return stat.date >= trackStartedAt
+            }
+        }
+        let incoming = validStats.first(where: { $0.isPriorityAppleMusicFormat && $0.isAttributed(trackID: targetTrack?.id, title: targetTrack?.title) })
+            ?? validStats.max(by: { lhs, rhs in
+                if lhs.date != rhs.date {
+                    return lhs.date < rhs.date
+                }
+                return !lhs.isPriorityAppleMusicFormat && rhs.isPriorityAppleMusicFormat
+            })
+        guard let incoming else {
             return
         }
+        let existing = appleMusicFormatEvidence
         guard AppleMusicFormatPolicy.shouldReplaceCachedFormat(
-            currentIsPriorityFormat: appleMusicFormatEvidence?.isPriorityAppleMusicFormat == true,
-            incomingIsPriorityFormat: incoming.isPriorityAppleMusicFormat
+            currentIsPriorityFormat: existing?.isPriorityAppleMusicFormat == true,
+            incomingIsPriorityFormat: incoming.isPriorityAppleMusicFormat,
+            currentIsAttributedToTrack: existing?.isAttributed(trackID: targetTrack?.id, title: targetTrack?.title) == true,
+            incomingIsNewer: existing.map { incoming.date > $0.date } ?? true
         ) else {
             return
         }
         appleMusicFormatEvidence = incoming
     }
 
-    private func rememberAppleMusicDecoderFormat(from stats: [CMPlayerStats]) {
+    private func rememberAppleMusicDecoderFormat(from stats: [CMPlayerStats], for track: MediaTrack? = nil) {
+        let targetTrack = track ?? currentTrack
+        if let existing = appleMusicDecoderFormatEvidence,
+           existing.isMismatched(trackID: targetTrack?.id, title: targetTrack?.title) {
+            appleMusicDecoderFormatEvidence = nil
+        }
+        let minDate = lastTrackChangeDate ?? currentTrackStartedAt
         guard let incoming = stats
-            .filter({ !$0.isAppleMusicFormat && $0.bitDepth != nil })
+            .filter({ stat in
+                guard !stat.isAppleMusicFormat && stat.bitDepth != nil else { return false }
+                guard !stat.isMismatched(trackID: targetTrack?.id, title: targetTrack?.title) else { return false }
+                if let minDate {
+                    return stat.date >= minDate
+                }
+                return true
+            })
             .max(by: { $0.date < $1.date }) else {
             return
         }
@@ -1411,12 +1545,47 @@ class OutputDevices: ObservableObject {
                 } else {
                     RateSyncLog.switching.info("APPLYING rate \(suitableFormat.mSampleRate, privacy: .public) Hz; bit depth unknown, preserving current depth")
                 }
+                var applySucceeded = true
                 if enableBitDepthDetection && first.bitDepth != nil {
                     self.setFormats(device: defaultDevice, format: suitableFormat)
+                    let appliedPhysicalFormat = defaultDevice.streams(scope: .output)?.first?.physicalFormat
+                    applySucceeded = DeviceFormatVerification.isPhysicalFormatApplied(
+                        targetRate: suitableFormat.mSampleRate,
+                        targetBitDepth: suitableFormat.mBitsPerChannel,
+                        streamPhysicalFormat: appliedPhysicalFormat,
+                        nominalRate: defaultDevice.nominalSampleRate
+                    )
+                } else if sampleRateChanged { // Keep the current depth when the source did not report one.
+                    let rateSetOk = defaultDevice.setNominalSampleRate(suitableFormat.mSampleRate)
+                    let confirmedNominal = defaultDevice.nominalSampleRate
+                    applySucceeded = DeviceFormatVerification.isSampleRateApplied(
+                        targetRate: suitableFormat.mSampleRate,
+                        nominalRate: confirmedNominal,
+                        rateSetOk: rateSetOk
+                    )
                 }
-                else if sampleRateChanged { // Keep the current depth when the source did not report one.
-                    defaultDevice.setNominalSampleRate(suitableFormat.mSampleRate)
+
+                if !applySucceeded {
+                    let streams = defaultDevice.streams(scope: .output)
+                    let currentStreamFormat = streams?.first?.physicalFormat
+                    let fallback = DeviceFormatVerification.fallbackStateOnFailure(
+                        nominalRate: defaultDevice.nominalSampleRate,
+                        streamPhysicalFormat: currentStreamFormat,
+                        currentOutputBitDepth: currentOutputBitDepth,
+                        previousSampleRate: previousSampleRate,
+                        previousBitDepth: previousBitDepth
+                    )
+                    RateSyncLog.switching.error("Device '\(defaultDevice.name, privacy: .public)' rejected format target=(\(suitableFormat.mSampleRate, privacy: .public) Hz, \(suitableFormat.mBitsPerChannel, privacy: .public) bit) nominal=(\(defaultDevice.nominalSampleRate ?? -1, privacy: .public) Hz)")
+                    self.pendingCandidate = nil
+                    if let fallbackRate = fallback.sampleRate {
+                        self.updateSampleRate(fallbackRate, bitDepth: fallback.bitDepth, runUserScript: false)
+                    } else {
+                        self.previousSampleRate = nil
+                        self.previousBitDepth = fallback.bitDepth
+                    }
+                    return
                 }
+
                 let appliedBitDepth = first.bitDepth != nil
                     ? Int(suitableFormat.mBitsPerChannel)
                     : currentOutputBitDepth ?? previousBitDepth
@@ -1661,6 +1830,9 @@ class OutputDevices: ObservableObject {
             self.appleMusicAtmosProbeLastCompletedAt = nil
             self.appleMusicResumeRetryWorkItem?.cancel()
             self.appleMusicResumeRetryWorkItem = nil
+            self.appleMusicRecoveryWorkItem?.cancel()
+            self.appleMusicRecoveryWorkItem = nil
+            self.appleMusicRecoveryAttempts = 0
             self.appleMusicFormatEvidence = nil
             self.appleMusicDecoderFormatEvidence = nil
             self.appleMusicFallbackFormat = nil
@@ -1695,6 +1867,9 @@ class OutputDevices: ObservableObject {
             self.appleMusicAtmosProbeLastCompletedAt = nil
             self.appleMusicResumeRetryWorkItem?.cancel()
             self.appleMusicResumeRetryWorkItem = nil
+            self.appleMusicRecoveryWorkItem?.cancel()
+            self.appleMusicRecoveryWorkItem = nil
+            self.appleMusicRecoveryAttempts = 0
             self.pendingNowPlayingClear?.cancel()
             self.pendingNowPlayingClear = nil
             self.currentTrack = nil

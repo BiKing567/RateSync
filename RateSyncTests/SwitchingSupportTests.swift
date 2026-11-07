@@ -1,3 +1,4 @@
+import CoreAudioTypes
 import Foundation
 import XCTest
 
@@ -834,12 +835,20 @@ final class SwitchingSupportTests: XCTestCase {
     func testAppleMusicEffectiveSampleRatePrefersConfirmedScriptRateOverUnverifiedLogs() {
         let decoderStat = CMPlayerStats(sampleRate: 96_000, bitDepth: 24, date: Date())
         let formatStat = CMPlayerStats(sampleRate: 48_000, bitDepth: 24, date: Date())
-        let atmosFormatStat = CMPlayerStats(
+        let unattributedAtmosStat = CMPlayerStats(
             sampleRate: 48_000,
             bitDepth: 24,
             date: Date(),
             isAppleMusicFormat: true,
             isDolbyAtmos: true
+        )
+        let attributedAtmosStat = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true,
+            trackIdentifier: "track-1"
         )
 
         // Confirmed AppleScript current-track query takes precedence over unverified decoder log
@@ -862,12 +871,26 @@ final class SwitchingSupportTests: XCTestCase {
             44_100
         )
 
-        // Priority format (Dolby Atmos) takes precedence even when AppleScript reports 44.1 kHz
+        // Unattributed Atmos log must NOT override a confirmed current-track query
         XCTAssertEqual(
             AppleMusicFormatPolicy.effectiveSampleRate(
                 scriptRate: 44_100,
                 decoderEvidence: nil,
-                formatEvidence: atmosFormatStat
+                formatEvidence: unattributedAtmosStat,
+                expectedTrackID: "track-1",
+                expectedTrackTitle: "Test Song"
+            ),
+            44_100
+        )
+
+        // Priority format (Dolby Atmos) attributed to the current track takes precedence over 44.1 kHz
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: 44_100,
+                decoderEvidence: nil,
+                formatEvidence: attributedAtmosStat,
+                expectedTrackID: "track-1",
+                expectedTrackTitle: "Test Song"
             ),
             48_000
         )
@@ -1003,6 +1026,621 @@ final class SwitchingSupportTests: XCTestCase {
         )
         XCTAssertEqual(fallbackWithTolerance, 44_100, "Passing tolerance threshold would mistake pre-track log as current evidence, confirming why currentTrackStartedAt is needed.")
     }
+
+    func testAppleMusicConfirmed96kRateNotOverriddenByPreTrackAtmosLog() {
+        let trackStart = Date(timeIntervalSince1970: 100.0)
+        let staleAtmosStat = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 99.7), // 0.3s before track start (stale from previous track)
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true
+        )
+
+        // Current track is confirmed as 96 kHz lossless.
+        // A stale Atmos log from 99.7s (before trackStart = 100.0) MUST NOT override the 96 kHz rate!
+        let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: 96_000,
+            decoderEvidence: nil,
+            formatEvidence: staleAtmosStat,
+            trackStartedAt: trackStart
+        )
+        XCTAssertEqual(
+            effectiveRate,
+            96_000,
+            "Stale pre-track Atmos log occurring before track start must not override confirmed 96 kHz track query."
+        )
+    }
+
+    func testAppleMusicFreshAtmosLogTakesPrecedenceOverScriptRateOnlyWhenAttributed() {
+        let trackStart = Date(timeIntervalSince1970: 100.0)
+
+        // 1. Unattributed Atmos log arriving 0.25s AFTER track change must NOT override confirmed 96 kHz
+        let unattributedPostTrackAtmos = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.25),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true
+        )
+        XCTAssertFalse(
+            AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+                formatEvidence: unattributedPostTrackAtmos,
+                expectedTrackID: "song-96k",
+                expectedTrackTitle: "Hi-Res Track",
+                trackStartedAt: trackStart
+            ),
+            "Unattributed post-track Atmos log must not take the fast path or override a confirmed track rate."
+        )
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: 96_000,
+                decoderEvidence: nil,
+                formatEvidence: unattributedPostTrackAtmos,
+                trackStartedAt: trackStart,
+                expectedTrackID: "song-96k",
+                expectedTrackTitle: "Hi-Res Track"
+            ),
+            96_000,
+            "Confirmed 96 kHz track must not be overridden by an unattributed Atmos log at t + 0.25s."
+        )
+
+        // 2. Attributed Atmos log belonging to the current track DOES take precedence
+        let attributedAtmosStat = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.3),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true,
+            trackIdentifier: "song-96k"
+        )
+        XCTAssertTrue(
+            AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+                formatEvidence: attributedAtmosStat,
+                expectedTrackID: "song-96k",
+                expectedTrackTitle: "Hi-Res Track",
+                trackStartedAt: trackStart
+            )
+        )
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: 44_100,
+                decoderEvidence: nil,
+                formatEvidence: attributedAtmosStat,
+                trackStartedAt: trackStart,
+                expectedTrackID: "song-96k",
+                expectedTrackTitle: "Hi-Res Track"
+            ),
+            48_000,
+            "Fresh Atmos log attributed to the current track should take precedence."
+        )
+
+        // 3. Cached unattributed Atmos log can be replaced by a newer normal lossless format log
+        XCTAssertTrue(
+            AppleMusicFormatPolicy.shouldReplaceCachedFormat(
+                currentIsPriorityFormat: true,
+                incomingIsPriorityFormat: false,
+                currentIsAttributedToTrack: false,
+                incomingIsNewer: true
+            ),
+            "An unattributed priority format log must be replaceable by a newer normal lossless format log."
+        )
+        XCTAssertFalse(
+            AppleMusicFormatPolicy.shouldReplaceCachedFormat(
+                currentIsPriorityFormat: true,
+                incomingIsPriorityFormat: false,
+                currentIsAttributedToTrack: true,
+                incomingIsNewer: true
+            ),
+            "An attributed priority format log must not be replaced by a non-priority format log."
+        )
+    }
+
+    func testAppleMusicPreNotificationDecoderLogRetainedInFallbackWhilePreNotificationAtmosRejected() {
+        let trackStart = Date(timeIntervalSince1970: 100.0) // MediaRemote notification time
+        let toleranceThreshold = trackStart.addingTimeInterval(-0.5) // lastTrackChangeDate (99.5)
+
+        // New track started decoding at 99.7s (0.3s before notification), emitting a 96 kHz decoder log.
+        let preNotificationDecoderLog = CMPlayerStats(
+            sampleRate: 96_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 99.7),
+            isAppleMusicFormat: false
+        )
+        // Stale unattributed Atmos log also at 99.7s (0.3s before notification).
+        let preNotificationAtmosLog = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 99.7),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true
+        )
+
+        let filtered = AppleMusicFormatPolicy.filterFallbackLogs(
+            [preNotificationAtmosLog, preNotificationDecoderLog],
+            expectedTrackID: "track-96k",
+            expectedTrackTitle: "Pre-decoded Track",
+            trackStartedAt: trackStart,
+            toleranceThreshold: toleranceThreshold
+        )
+
+        XCTAssertEqual(filtered.count, 1)
+        XCTAssertEqual(
+            filtered.first?.sampleRate,
+            96_000,
+            "Fallback log filtering must keep pre-notification decoder logs within tolerance while dropping unattributed pre-notification Atmos logs."
+        )
+
+        // When AppleScript is unavailable, effectiveSampleRate with decoderToleranceThreshold selects 96 kHz
+        let fallbackRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: nil,
+            decoderEvidence: preNotificationDecoderLog,
+            formatEvidence: preNotificationAtmosLog,
+            trackStartedAt: trackStart,
+            expectedTrackID: "track-96k",
+            expectedTrackTitle: "Pre-decoded Track",
+            decoderToleranceThreshold: toleranceThreshold
+        )
+        XCTAssertEqual(
+            fallbackRate,
+            96_000,
+            "When AppleScript is unavailable, pre-notification decoder log within tolerance must be selected."
+        )
+    }
+
+    func testAppleMusicSubstringTitlesAndSimilarTrackIDsDoNotMatchOrOverrideConfirmed96kRate() {
+        let trackStart = Date(timeIntervalSince1970: 100.0)
+
+        // Current track is "Stay" with ID "track-96", confirmed at 96 kHz.
+        let stayWithMeAtmos = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.25),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true,
+            trackIdentifier: "Stay With Me"
+        )
+        let similarIDAtmos = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.25),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true,
+            trackIdentifier: "track-961"
+        )
+
+        XCTAssertEqual(
+            stayWithMeAtmos.attribution(trackID: "track-96", title: "Stay"),
+            .mismatched,
+            "Substring overlap ('Stay' vs 'Stay With Me') must be classified as mismatched, not matched."
+        )
+        XCTAssertEqual(
+            similarIDAtmos.attribution(trackID: "track-96", title: "Stay"),
+            .mismatched,
+            "Prefix/substring ID overlap ('track-96' vs 'track-961') must be classified as mismatched."
+        )
+
+        // Reverse direction: current track is "Stay With Me" / "track-961", log has "Stay" / "track-96"
+        let shortTitleAtmos = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.25),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true,
+            trackIdentifier: "Stay"
+        )
+        XCTAssertEqual(
+            shortTitleAtmos.attribution(trackID: "track-961", title: "Stay With Me"),
+            .mismatched
+        )
+
+        // Neither similar-title nor similar-ID Atmos logs may override the confirmed 96 kHz rate
+        XCTAssertFalse(
+            AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+                formatEvidence: stayWithMeAtmos,
+                expectedTrackID: "track-96",
+                expectedTrackTitle: "Stay",
+                trackStartedAt: trackStart
+            )
+        )
+        XCTAssertFalse(
+            AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+                formatEvidence: similarIDAtmos,
+                expectedTrackID: "track-96",
+                expectedTrackTitle: "Stay",
+                trackStartedAt: trackStart
+            )
+        )
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: 96_000,
+                decoderEvidence: nil,
+                formatEvidence: stayWithMeAtmos,
+                trackStartedAt: trackStart,
+                expectedTrackID: "track-96",
+                expectedTrackTitle: "Stay"
+            ),
+            96_000
+        )
+        XCTAssertEqual(
+            AppleMusicFormatPolicy.effectiveSampleRate(
+                scriptRate: 96_000,
+                decoderEvidence: nil,
+                formatEvidence: similarIDAtmos,
+                trackStartedAt: trackStart,
+                expectedTrackID: "track-96",
+                expectedTrackTitle: "Stay"
+            ),
+            96_000
+        )
+    }
+
+    func testAppleMusicFallbackRejectsKnownMismatchedLogsAndKeepsPreNotification96kDecoderLog() {
+        let trackStart = Date(timeIntervalSince1970: 100.0)
+        let toleranceThreshold = trackStart.addingTimeInterval(-0.5) // 99.5
+
+        // Current track's 96 kHz decoder log arrives 0.3s before notification (unattributed)
+        let preNotification96kDecoder = CMPlayerStats(
+            sampleRate: 96_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 99.7),
+            isAppleMusicFormat: false
+        )
+        // Later (at 100.3s), a 48 kHz format log explicitly belonging to another track arrives
+        let otherTrack48kFormat = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.3),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true,
+            trackIdentifier: "Stay With Me"
+        )
+
+        // 1. filterFallbackLogs must reject the explicitly mismatched 48 kHz log and retain 96 kHz
+        let filtered = AppleMusicFormatPolicy.filterFallbackLogs(
+            [preNotification96kDecoder, otherTrack48kFormat],
+            expectedTrackID: "track-96",
+            expectedTrackTitle: "Stay",
+            trackStartedAt: trackStart,
+            toleranceThreshold: toleranceThreshold
+        )
+        XCTAssertEqual(filtered.count, 1)
+        XCTAssertEqual(filtered.first?.sampleRate, 96_000)
+
+        // 2. preferredFallbackEvidence must reject the mismatched 48 kHz format log even though it is newer
+        let preferred = AppleMusicFormatPolicy.preferredFallbackEvidence(
+            formatEvidence: otherTrack48kFormat,
+            decoderEvidence: preNotification96kDecoder,
+            expectedTrackID: "track-96",
+            expectedTrackTitle: "Stay",
+            trackStartedAt: trackStart,
+            decoderToleranceThreshold: toleranceThreshold
+        )
+        XCTAssertEqual(preferred?.stat.sampleRate, 96_000)
+        XCTAssertEqual(preferred?.source, .decoderLog)
+
+        // 3. effectiveSampleRate in fallback mode (scriptRate == nil) must also return 96 kHz
+        let effective = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: nil,
+            decoderEvidence: preNotification96kDecoder,
+            formatEvidence: otherTrack48kFormat,
+            trackStartedAt: trackStart,
+            expectedTrackID: "track-96",
+            expectedTrackTitle: "Stay",
+            decoderToleranceThreshold: toleranceThreshold
+        )
+        XCTAssertEqual(
+            effective,
+            96_000,
+            "Known mismatched 48 kHz log must be excluded from fallback so the retained 96 kHz decoder log wins."
+        )
+    }
+
+    func testDeviceFormatFailureFallbackNeverWritesRejectedTargetRate() {
+        // When device rejects setting 96 kHz and readback + history are all nil,
+        // fallbackStateOnFailure must keep sampleRate nil (unconfirmed) so the next poll retries.
+        let unconfirmedFallback = DeviceFormatVerification.fallbackStateOnFailure(
+            nominalRate: nil,
+            streamPhysicalFormat: nil,
+            currentOutputBitDepth: nil,
+            previousSampleRate: nil,
+            previousBitDepth: nil
+        )
+        XCTAssertNil(
+            unconfirmedFallback.sampleRate,
+            "Failed format application must not fall back to the rejected target rate when readback and history are nil."
+        )
+        XCTAssertFalse(unconfirmedFallback.hasConfirmedSampleRate)
+
+        // When previousSampleRate is known (e.g. 44.1 kHz) and readback is nil, preserve 44.1 kHz
+        let previousFallback = DeviceFormatVerification.fallbackStateOnFailure(
+            nominalRate: nil,
+            streamPhysicalFormat: nil,
+            currentOutputBitDepth: 16,
+            previousSampleRate: 44_100,
+            previousBitDepth: 24
+        )
+        XCTAssertEqual(previousFallback.sampleRate, 44_100)
+        XCTAssertEqual(previousFallback.bitDepth, 16)
+
+        // When device nominalRate is readable (e.g. stayed at 48 kHz), report actual 48 kHz
+        let nominalFallback = DeviceFormatVerification.fallbackStateOnFailure(
+            nominalRate: 48_000,
+            streamPhysicalFormat: nil,
+            currentOutputBitDepth: nil,
+            previousSampleRate: 44_100,
+            previousBitDepth: 16
+        )
+        XCTAssertEqual(nominalFallback.sampleRate, 48_000)
+        XCTAssertEqual(nominalFallback.bitDepth, 16)
+    }
+
+    func testAppleMusicRecoveryProbePolicy() {
+        // Should schedule recovery when in fallbackToLogs and no confirmed rate has been obtained
+        XCTAssertTrue(
+            AppleMusicCurrentTrackRatePolicy.shouldScheduleRecoveryProbe(
+                state: .fallbackToLogs,
+                hasKnownCurrentTrackRate: false,
+                attempts: 0
+            )
+        )
+        XCTAssertTrue(
+            AppleMusicCurrentTrackRatePolicy.shouldScheduleRecoveryProbe(
+                state: .fallbackToLogs,
+                hasKnownCurrentTrackRate: false,
+                attempts: 1
+            )
+        )
+        // Should NOT schedule if max attempts reached
+        XCTAssertFalse(
+            AppleMusicCurrentTrackRatePolicy.shouldScheduleRecoveryProbe(
+                state: .fallbackToLogs,
+                hasKnownCurrentTrackRate: false,
+                attempts: 2
+            )
+        )
+        // Should NOT schedule if a valid rate is already known
+        XCTAssertFalse(
+            AppleMusicCurrentTrackRatePolicy.shouldScheduleRecoveryProbe(
+                state: .fallbackToLogs,
+                hasKnownCurrentTrackRate: true,
+                attempts: 0
+            )
+        )
+        // Should NOT schedule if in other states (e.g. waiting, querying, resolved)
+        XCTAssertFalse(
+            AppleMusicCurrentTrackRatePolicy.shouldScheduleRecoveryProbe(
+                state: .waiting,
+                hasKnownCurrentTrackRate: false,
+                attempts: 0
+            )
+        )
+        XCTAssertFalse(
+            AppleMusicCurrentTrackRatePolicy.shouldScheduleRecoveryProbe(
+                state: .resolved(96000),
+                hasKnownCurrentTrackRate: false,
+                attempts: 0
+            )
+        )
+    }
+
+    func testAppleMusicPreTrackAtmosLogCannotBypassWhenScriptRateUnavailable() {
+        let trackStart = Date(timeIntervalSince1970: 100.0)
+        let staleAtmosStat = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 99.7), // 0.3s before track start
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true
+        )
+
+        // When AppleScript query fails or is unavailable (scriptRate == nil),
+        // a stale pre-track Atmos log must NOT bypass filtering and must NOT be selected.
+        let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: nil,
+            decoderEvidence: nil,
+            formatEvidence: staleAtmosStat,
+            trackStartedAt: trackStart
+        )
+        XCTAssertNil(
+            effectiveRate,
+            "Stale pre-track Atmos log must not be returned when scriptRate is unavailable."
+        )
+
+        // When the Atmos log is fresh (>= trackStart), it should be accepted.
+        let freshAtmosStat = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.2),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true
+        )
+        let freshRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: nil,
+            decoderEvidence: nil,
+            formatEvidence: freshAtmosStat,
+            trackStartedAt: trackStart
+        )
+        XCTAssertEqual(
+            freshRate,
+            48_000,
+            "Fresh Atmos log for current track should be accepted when scriptRate is unavailable."
+        )
+    }
+
+    func testAppleMusicStaleLogsDoNotBlockAppleScriptFallback() {
+        let trackStart = Date(timeIntervalSince1970: 100.0)
+        let staleLog = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 99.7),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true
+        )
+        let rawLogs = [staleLog]
+        let validLogs = rawLogs.filter { $0.date >= trackStart }
+
+        XCTAssertTrue(validLogs.isEmpty, "Pre-track logs must be filtered out for current track.")
+
+        // When validLogs is empty, hasLogStats is false: resolution should request AppleScript query
+        let resolution = AppleMusicFormatPolicy.resolution(
+            hasLogEvidence: false,
+            hasLogStats: !validLogs.isEmpty,
+            hasCachedFallback: false,
+            hasAttemptedFallback: false,
+            isPlaying: true
+        )
+        XCTAssertEqual(
+            resolution,
+            .requestAppleScript,
+            "Filtered out pre-track logs must not block AppleScript playback state fallback."
+        )
+    }
+
+    func testAppleMusicFallbackWithBothStaleDecoderAndStaleAtmosReturnsNil() {
+        let trackStart = Date(timeIntervalSince1970: 100.0)
+        let staleAtmos = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 99.7),
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true
+        )
+        let staleDecoder = CMPlayerStats(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            date: Date(timeIntervalSince1970: 99.5),
+            isAppleMusicFormat: false,
+            isDolbyAtmos: false
+        )
+
+        let effectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: nil,
+            decoderEvidence: staleDecoder,
+            formatEvidence: staleAtmos,
+            trackStartedAt: trackStart
+        )
+        XCTAssertNil(
+            effectiveRate,
+            "When all evidence is pre-track and scriptRate is unavailable, effective rate must be nil."
+        )
+    }
+
+    func testDeviceFormatVerificationIgnoresClockDriftAndUsesNominalRate() {
+        let targetRate: Float64 = 48_000
+
+        // Success case: nominal rate matches 48000, driver returned ok.
+        // Even if actual measured clock was 47999.8 Hz, nominal rate confirmation succeeds.
+        XCTAssertTrue(
+            DeviceFormatVerification.isSampleRateApplied(
+                targetRate: targetRate,
+                nominalRate: 48_000,
+                rateSetOk: true
+            )
+        )
+
+        // Sub-hertz floating point tolerance (< 1.0 Hz)
+        XCTAssertTrue(
+            DeviceFormatVerification.isSampleRateApplied(
+                targetRate: targetRate,
+                nominalRate: 48_000.0001,
+                rateSetOk: true
+            )
+        )
+
+        // Device nominal rate mismatch (e.g. still at 44100)
+        XCTAssertFalse(
+            DeviceFormatVerification.isSampleRateApplied(
+                targetRate: targetRate,
+                nominalRate: 44_100,
+                rateSetOk: true
+            )
+        )
+
+        // Driver call failed
+        XCTAssertFalse(
+            DeviceFormatVerification.isSampleRateApplied(
+                targetRate: targetRate,
+                nominalRate: 48_000,
+                rateSetOk: false
+            )
+        )
+
+        // Nominal rate readback is nil
+        XCTAssertFalse(
+            DeviceFormatVerification.isSampleRateApplied(
+                targetRate: targetRate,
+                nominalRate: nil,
+                rateSetOk: true
+            )
+        )
+    }
+
+    func testDevicePhysicalFormatVerificationChecksBitDepthAndSampleRate() {
+        let targetRate: Float64 = 48_000
+        let targetBitDepth: UInt32 = 32
+
+        var matchingFormat = AudioStreamBasicDescription()
+        matchingFormat.mSampleRate = 48_000
+        matchingFormat.mBitsPerChannel = 32
+
+        // Both sample rate and bit depth match
+        XCTAssertTrue(
+            DeviceFormatVerification.isPhysicalFormatApplied(
+                targetRate: targetRate,
+                targetBitDepth: targetBitDepth,
+                streamPhysicalFormat: matchingFormat,
+                nominalRate: 48_000
+            )
+        )
+
+        // Bit depth failed to change (e.g. device DAC stayed at 24-bit)
+        var rejectedBitDepthFormat = matchingFormat
+        rejectedBitDepthFormat.mBitsPerChannel = 24
+        XCTAssertFalse(
+            DeviceFormatVerification.isPhysicalFormatApplied(
+                targetRate: targetRate,
+                targetBitDepth: targetBitDepth,
+                streamPhysicalFormat: rejectedBitDepthFormat,
+                nominalRate: 48_000
+            ),
+            "Bit depth mismatch must report failure so the target bit depth is not falsely cached."
+        )
+
+        // Sample rate mismatch in stream format
+        var wrongRateFormat = matchingFormat
+        wrongRateFormat.mSampleRate = 44_100
+        XCTAssertFalse(
+            DeviceFormatVerification.isPhysicalFormatApplied(
+                targetRate: targetRate,
+                targetBitDepth: targetBitDepth,
+                streamPhysicalFormat: wrongRateFormat,
+                nominalRate: 48_000
+            )
+        )
+
+        // Stream format readback is nil
+        XCTAssertFalse(
+            DeviceFormatVerification.isPhysicalFormatApplied(
+                targetRate: targetRate,
+                targetBitDepth: targetBitDepth,
+                streamPhysicalFormat: nil,
+                nominalRate: 48_000
+            ),
+            "Nil stream format readback must report failure."
+        )
+
+        // Nominal rate mismatch when present
+        XCTAssertFalse(
+            DeviceFormatVerification.isPhysicalFormatApplied(
+                targetRate: targetRate,
+                targetBitDepth: targetBitDepth,
+                streamPhysicalFormat: matchingFormat,
+                nominalRate: 96_000
+            )
+        )
+    }
+
 
     func testResolvesPresetRateForSpotify() {
         // Given

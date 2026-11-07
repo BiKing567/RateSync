@@ -11,6 +11,23 @@ struct AppleMusicFormatEvidence: Equatable {
     let date: Date
     let isDolbyAtmos: Bool
     let isSpatialAudio: Bool
+    let trackIdentifier: String?
+
+    init(
+        sampleRate: Double,
+        bitDepth: Int?,
+        date: Date,
+        isDolbyAtmos: Bool,
+        isSpatialAudio: Bool,
+        trackIdentifier: String? = nil
+    ) {
+        self.sampleRate = sampleRate
+        self.bitDepth = bitDepth
+        self.date = date
+        self.isDolbyAtmos = isDolbyAtmos
+        self.isSpatialAudio = isSpatialAudio
+        self.trackIdentifier = trackIdentifier
+    }
 }
 
 enum AppleMusicFormatParser {
@@ -39,12 +56,22 @@ enum AppleMusicFormatParser {
         let isDolbyAtmos = entry.message.localizedCaseInsensitiveContains("original is Atmos")
             || entry.message.localizedCaseInsensitiveContains("Dolby Atmos")
             || entry.message.localizedCaseInsensitiveContains("is Atmos")
+        let rawTrackIdentifier = value(after: "mediaFormatinfo '", before: "'", in: entry.message)
+        let trackIdentifier: String? = {
+            guard let rawTrackIdentifier,
+                  !rawTrackIdentifier.isEmpty,
+                  rawTrackIdentifier != "<private>" else {
+                return nil
+            }
+            return rawTrackIdentifier
+        }()
         return AppleMusicFormatEvidence(
             sampleRate: sampleRateInKHz * 1_000,
             bitDepth: bitDepth,
             date: entry.date,
             isDolbyAtmos: isDolbyAtmos,
-            isSpatialAudio: isSpatialAudio
+            isSpatialAudio: isSpatialAudio,
+            trackIdentifier: trackIdentifier
         )
     }
 
