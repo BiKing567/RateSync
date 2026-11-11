@@ -2168,4 +2168,918 @@ final class SwitchingSupportTests: XCTestCase {
         )
     }
 
+    func testPendingTrackEventCoalescerReleasesBackloggedPayloadsImmediately() {
+        final class HeavyPayload {
+            let id: Int
+            let data: Data
+            init(id: Int) {
+                self.id = id
+                self.data = Data(repeating: UInt8(id & 0xFF), count: 64 * 1024)
+            }
+        }
+
+        let coalescer = PendingTrackEventCoalescer<HeavyPayload>()
+        var weakRefs: [ () -> HeavyPayload? ] = []
+
+        for index in 0..<48 {
+            autoreleasepool {
+                let payload = HeavyPayload(id: index)
+                weak var weakPayload = payload
+                weakRefs.append({ weakPayload })
+                let shouldSchedule = coalescer.enqueue(payload)
+                if index == 0 {
+                    XCTAssertTrue(shouldSchedule, "First enqueued event must schedule a drain.")
+                } else {
+                    XCTAssertFalse(shouldSchedule, "Subsequent events while busy must coalesce without scheduling extra blocks.")
+                }
+            }
+        }
+
+        // All 47 superseded payloads must already be deallocated before the queue even drains!
+        for index in 0..<47 {
+            XCTAssertNil(weakRefs[index](), "Superseded payload \(index) must be released immediately on overwrite.")
+        }
+        XCTAssertNotNil(weakRefs[47](), "Only the latest payload (47) should remain pending.")
+
+        autoreleasepool {
+            let drained = coalescer.takeNext()
+            XCTAssertEqual(drained?.id, 47)
+        }
+        XCTAssertNil(weakRefs[47](), "Latest payload must be released once drained.")
+    }
+
+    func testSteadyStateAndPausedPollingPoliciesStopRedundantAppleScriptAndLogScans() {
+        let trackStart = Date(timeIntervalSince1970: 1_000)
+        let afterSettling = trackStart.addingTimeInterval(15)
+
+        // 1. Atmos log probe must not schedule when paused (.notPlaying) or past maxProbeWindow
+        XCTAssertFalse(
+            AppleMusicFormatProbePolicy.shouldSchedule(
+                generation: 1,
+                scheduledGeneration: nil,
+                completedGeneration: nil,
+                lastCompletedAt: nil,
+                now: trackStart.addingTimeInterval(1),
+                trackStartedAt: trackStart,
+                sampleRateState: .notPlaying
+            ),
+            "Atmos OSLog probe must never run while Apple Music is paused."
+        )
+        XCTAssertFalse(
+            AppleMusicFormatProbePolicy.shouldSchedule(
+                generation: 1,
+                scheduledGeneration: nil,
+                completedGeneration: 1,
+                lastCompletedAt: trackStart.addingTimeInterval(2),
+                now: afterSettling,
+                trackStartedAt: trackStart,
+                sampleRateState: .resolved(96_000)
+            ),
+            "Atmos OSLog probe must not keep rescanning after the track settling window has passed."
+        )
+
+        // 2. AppleScript revalidation must stop once the track is locked and past the settling window
+        XCTAssertTrue(
+            AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+                lastQueriedAt: trackStart.addingTimeInterval(0.5),
+                now: trackStart.addingTimeInterval(3.0),
+                trackStartedAt: trackStart,
+                isTrackLocked: true
+            ),
+            "Within the initial settling window, revalidation is still allowed to catch delayed Hi-Res loading."
+        )
+        XCTAssertFalse(
+            AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+                lastQueriedAt: trackStart.addingTimeInterval(3.0),
+                now: afterSettling,
+                trackStartedAt: trackStart,
+                isTrackLocked: true
+            ),
+            "Once locked and past the settling window, periodic polling must not re-query AppleScript."
+        )
+
+        // 3. SteadyStatePollingPolicy skips polling when paused or settled
+        XCTAssertFalse(
+            SteadyStatePollingPolicy.shouldPollTrack(
+                hasCurrentTrack: true,
+                isTrackLocked: false,
+                hasPendingCandidate: false,
+                appleMusicState: .notPlaying,
+                trackStartedAt: trackStart,
+                now: trackStart.addingTimeInterval(3.0)
+            )
+        )
+        XCTAssertFalse(
+            SteadyStatePollingPolicy.shouldPollTrack(
+                hasCurrentTrack: true,
+                isTrackLocked: true,
+                hasPendingCandidate: false,
+                appleMusicState: .resolved(96_000),
+                trackStartedAt: trackStart,
+                now: afterSettling
+            )
+        )
+
+        // 4. Pause recovery check stops when track is already locked or after maxResumeChecks
+        XCTAssertNil(
+            AppleMusicPlaybackRecoveryPolicy.retryDelay(
+                hasCurrentTrack: true,
+                isTrackLocked: true,
+                attempts: 0
+            )
+        )
+        XCTAssertNil(
+            AppleMusicPlaybackRecoveryPolicy.retryDelay(
+                hasCurrentTrack: true,
+                isTrackLocked: false,
+                attempts: AppleMusicPlaybackRecoveryPolicy.maxResumeChecks
+            )
+        )
+    }
+
+    func testPendingTrackEventCoalescerPreservesCausalOrderAcrossClearAndSubsequentTrack() {
+        final class TrackPayload {
+            let title: String
+            init(_ title: String) { self.title = title }
+        }
+
+        let coalescer = PendingTrackEventCoalescer<TrackPayload>()
+        weak var weakTrackA: TrackPayload?
+        weak var weakTrackB: TrackPayload?
+
+        // Replay: Queue busy -> Track A -> Clear -> Track B
+        autoreleasepool {
+            let trackA = TrackPayload("Track A")
+            weakTrackA = trackA
+            XCTAssertTrue(coalescer.enqueue(trackA), "First event must schedule drain.")
+        }
+        XCTAssertNotNil(weakTrackA)
+
+        XCTAssertFalse(
+            coalescer.enqueueClear(),
+            "Clear while drain is already scheduled must coalesce into the same drain turn."
+        )
+        XCTAssertNil(weakTrackA, "Clear must immediately release prior pending Track A.")
+
+        autoreleasepool {
+            let trackB = TrackPayload("Track B")
+            weakTrackB = trackB
+            XCTAssertFalse(
+                coalescer.enqueue(trackB),
+                "Track B after clear while drain is already scheduled must coalesce into the same drain turn."
+            )
+        }
+        XCTAssertNotNil(weakTrackB)
+
+        // Simulate draining in order: Clear must execute before Track B, leaving Track B as final state.
+        var activeTrack: String? = "Old Track"
+        if let action = coalescer.takeNextAction() {
+            switch action {
+            case .event(let track):
+                activeTrack = track.title
+            case .clear:
+                activeTrack = nil
+            case .clearThenEvent(let track):
+                activeTrack = nil
+                activeTrack = track.title
+            case .resetArbitration:
+                break
+            case .resetArbitrationThenEvent(let track):
+                activeTrack = track.title
+            }
+        }
+        XCTAssertEqual(activeTrack, "Track B", "Track B arriving after Clear must survive as the active track.")
+
+        // Also replay: Track A -> Track B -> Clear -> final state must be nil.
+        _ = coalescer.enqueue(TrackPayload("Track A"))
+        _ = coalescer.enqueue(TrackPayload("Track B"))
+        _ = coalescer.enqueueClear()
+        if let action = coalescer.takeNextAction() {
+            if action.includesClear {
+                activeTrack = nil
+            }
+            if let track = action.event {
+                activeTrack = track.title
+            }
+        }
+        XCTAssertNil(activeTrack, "Clear arriving after Track B must leave no active track.")
+    }
+
+    func testTrackEventIdentityDoesNotSuppressPauseResumeWithIdenticalTimestamp() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let paused = TrackEventIdentity(
+            title: "Song",
+            artist: "Artist",
+            album: "Album",
+            artworkDataBase64: "AAAA",
+            bundleIdentifier: "com.apple.Music",
+            processID: 123,
+            timestampEpochMicros: 1_700_000_000_000_000,
+            isPlaying: false
+        )
+        let resumed = TrackEventIdentity(
+            title: "Song",
+            artist: "Artist",
+            album: "Album",
+            artworkDataBase64: "AAAA",
+            bundleIdentifier: "com.apple.Music",
+            processID: 123,
+            timestampEpochMicros: 1_700_000_000_000_000,
+            isPlaying: true
+        )
+
+        XCTAssertFalse(
+            TrackEventIdentity.shouldSuppressDuplicate(
+                previous: paused,
+                current: resumed,
+                lastDeliveredAt: now,
+                now: now.addingTimeInterval(0.1)
+            ),
+            "Resume event with identical timestamp must not be suppressed as a duplicate of the pause event."
+        )
+        XCTAssertTrue(
+            TrackEventIdentity.shouldSuppressDuplicate(
+                previous: resumed,
+                current: resumed,
+                lastDeliveredAt: now,
+                now: now.addingTimeInterval(0.1)
+            ),
+            "Identical burst events with the same isPlaying state and timestamp must still be suppressed."
+        )
+    }
+
+    func testSteadyStatePollingReevaluatesOnOutputDeviceChangeAndSettlesOnEqualRateMatch() {
+        let trackStart = Date(timeIntervalSince1970: 3_000)
+        let at30Seconds = trackStart.addingTimeInterval(30)
+
+        // 1. P2 replay: 96 kHz track locked on Device A (at 96 kHz) for > 8s, then switched to Device B (at 48 kHz)
+        let deviceAMatch = SteadyStatePollingPolicy.ConfirmedDeviceMatch(
+            deviceUID: "Device-A",
+            sampleRate: 96_000,
+            bitDepth: 24,
+            sourceSampleRate: 96_000
+        )
+        let matchedOnDeviceB = SteadyStatePollingPolicy.isDeviceMatched(
+            lockedSampleRate: 96_000,
+            lockedBitDepth: 24,
+            lockedDeviceUID: "Device-A",
+            confirmedMatch: deviceAMatch,
+            currentDeviceUID: "Device-B",
+            currentDeviceSampleRate: 48_000,
+            currentDeviceBitDepth: 24,
+            enableBitDepthDetection: false
+        )
+        XCTAssertFalse(matchedOnDeviceB, "Lock from Device A (96 kHz) must not consider Device B (48 kHz) matched.")
+        XCTAssertTrue(
+            SteadyStatePollingPolicy.shouldPollTrack(
+                hasCurrentTrack: true,
+                isTrackLocked: false,
+                isDeviceMatched: matchedOnDeviceB,
+                hasPendingCandidate: false,
+                appleMusicState: .resolved(96_000),
+                trackStartedAt: trackStart,
+                now: at30Seconds
+            ),
+            "Polling must re-evaluate when the active output device does not match the confirmed rate."
+        )
+
+        // 2. P2 replay: Consecutive 44.1 kHz track when device is already at 44.1 kHz
+        // `lockedSampleRate` stays nil (preserving switching lock semantics), while `confirmedMatch` is recorded.
+        let equalRateMatch = SteadyStatePollingPolicy.ConfirmedDeviceMatch(
+            deviceUID: "Device-A",
+            sampleRate: 44_100,
+            bitDepth: 16,
+            sourceSampleRate: 44_100
+        )
+        let isEqualRateDeviceMatched = SteadyStatePollingPolicy.isDeviceMatched(
+            lockedSampleRate: nil,
+            lockedBitDepth: nil,
+            lockedDeviceUID: nil,
+            confirmedMatch: equalRateMatch,
+            currentDeviceUID: "Device-A",
+            currentDeviceSampleRate: 44_100,
+            currentDeviceBitDepth: 16,
+            enableBitDepthDetection: false
+        )
+        XCTAssertTrue(isEqualRateDeviceMatched, "Equal-rate no-op must record a confirmed device match.")
+        XCTAssertFalse(
+            SteadyStatePollingPolicy.shouldPollTrack(
+                hasCurrentTrack: true,
+                isTrackLocked: false,
+                isDeviceMatched: isEqualRateDeviceMatched,
+                hasPendingCandidate: false,
+                appleMusicState: .resolved(44_100),
+                trackStartedAt: trackStart,
+                now: at30Seconds
+            ),
+            "At 30s into an equal-rate track, steady-state polling must skip redundant AppleScript queries."
+        )
+        XCTAssertFalse(
+            AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+                lastQueriedAt: trackStart.addingTimeInterval(2.0),
+                now: at30Seconds,
+                trackStartedAt: trackStart,
+                isTrackLocked: isEqualRateDeviceMatched
+            ),
+            "At 30s into an equal-rate track, AppleScript revalidation must not fire."
+        )
+    }
+
+    func testLongPauseResetsSettlingWindowAndRevalidatesInsteadOfReusingResolvedRate() {
+        let initialTrackStart = Date(timeIntervalSince1970: 10_000)
+        let pausedAt = initialTrackStart.addingTimeInterval(30)
+        let resumedAt = initialTrackStart.addingTimeInterval(60)
+
+        // 1. Prior to pause, track reached 30s with confirmed 44.1 kHz lock.
+        // If trackStartedAt is NOT reset on resume (remains initialTrackStart at 60s), revalidation is blocked:
+        let blockedWithoutReset = AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+            lastQueriedAt: pausedAt,
+            now: resumedAt.addingTimeInterval(2.0),
+            trackStartedAt: initialTrackStart,
+            isTrackLocked: true
+        )
+        XCTAssertFalse(blockedWithoutReset, "Without resetting trackStartedAt, 62s elapsed since trackStart blocks revalidation.")
+
+        // 2. With resumedAt as the new tracking baseline, detection window is restarted:
+        let allowsRevalidationWithReset = AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+            lastQueriedAt: resumedAt,
+            now: resumedAt.addingTimeInterval(2.0),
+            trackStartedAt: resumedAt,
+            isTrackLocked: true
+        )
+        XCTAssertTrue(allowsRevalidationWithReset, "Restarting detection baseline at resumedAt allows revalidation to detect updated Hi-Res rate.")
+
+        // 3. Steady state polling should poll during the restarted settling window:
+        let shouldPollAfterResume = SteadyStatePollingPolicy.shouldPollTrack(
+            hasCurrentTrack: true,
+            isTrackLocked: true,
+            isDeviceMatched: true,
+            hasPendingCandidate: false,
+            appleMusicState: .waiting,
+            trackStartedAt: resumedAt,
+            now: resumedAt.addingTimeInterval(2.0)
+        )
+        XCTAssertTrue(shouldPollAfterResume, "Steady state polling must stay active during the restarted settling window.")
+    }
+
+    func testBitDepthFailureClearsOldLockAndRetainsPendingCandidateForRetry() {
+        // Replay: Current device is at 44.1 kHz, 16-bit. Target is 44.1 kHz, 24-bit.
+        // Device rejected format change and remained at 16-bit.
+        let deviceUID = "DAC-1"
+        let rate: Float64 = 44_100
+        let targetBitDepth = 24
+        let currentDeviceBitDepth = 16
+
+        // Old state before failure:
+        var lockedRate: Float64? = rate
+        var lockedBitDepth: Int? = 16
+        var lockedDeviceUID: String? = deviceUID
+        var confirmedMatch: SteadyStatePollingPolicy.ConfirmedDeviceMatch? = SteadyStatePollingPolicy.ConfirmedDeviceMatch(
+            deviceUID: deviceUID,
+            sampleRate: rate,
+            bitDepth: 16,
+            sourceSampleRate: rate
+        )
+        var pendingCandidate: RateGateDecisionPolicy.CandidateTracking? = nil
+
+        // If only confirmedMatch is removed while old lock is kept:
+        let mistakenlyMatchedWithOldLock = SteadyStatePollingPolicy.isDeviceMatched(
+            lockedSampleRate: lockedRate,
+            lockedBitDepth: lockedBitDepth,
+            lockedDeviceUID: lockedDeviceUID,
+            confirmedMatch: nil,
+            currentDeviceUID: deviceUID,
+            currentDeviceSampleRate: rate,
+            currentDeviceBitDepth: currentDeviceBitDepth,
+            enableBitDepthDetection: true
+        )
+        XCTAssertTrue(mistakenlyMatchedWithOldLock, "Keeping the old 16-bit lock mistakenly matches device at 16-bit.")
+
+        // Fix: Failure clears both confirmedMatch and the old lock, retaining candidate:
+        confirmedMatch = nil
+        lockedRate = nil
+        lockedBitDepth = nil
+        lockedDeviceUID = nil
+        pendingCandidate = RateGateDecisionPolicy.CandidateTracking(
+            rate: rate,
+            generation: 1,
+            firstSeen: Date()
+        )
+
+        let isMatchedAfterProperClearing = SteadyStatePollingPolicy.isDeviceMatched(
+            lockedSampleRate: lockedRate,
+            lockedBitDepth: lockedBitDepth,
+            lockedDeviceUID: lockedDeviceUID,
+            confirmedMatch: confirmedMatch,
+            currentDeviceUID: deviceUID,
+            currentDeviceSampleRate: rate,
+            currentDeviceBitDepth: currentDeviceBitDepth,
+            enableBitDepthDetection: true
+        )
+        XCTAssertFalse(isMatchedAfterProperClearing, "Device at 16-bit must NOT match once old lock is cleared.")
+
+        let shouldRetryInPolling = SteadyStatePollingPolicy.shouldPollTrack(
+            hasCurrentTrack: true,
+            isTrackLocked: false,
+            isDeviceMatched: false,
+            hasPendingCandidate: pendingCandidate != nil,
+            appleMusicState: .resolved(rate),
+            trackStartedAt: Date(timeIntervalSince1970: 20_000),
+            now: Date(timeIntervalSince1970: 20_030)
+        )
+        XCTAssertTrue(shouldRetryInPolling, "Steady-state polling must continue to retry when pending candidate exists.")
+    }
+
+    func testMediaRemoteControllerUpstreamQueueCoalescesBackloggedArtworkPayloads() {
+        final class HeavyArtworkPayload {
+            let id: Int
+            let artwork: Data
+            init(id: Int) {
+                self.id = id
+                self.artwork = Data(repeating: UInt8(id & 0x7F), count: 1024 * 1024) // 1 MiB
+            }
+        }
+
+        let coalescer = PendingTrackEventCoalescer<HeavyArtworkPayload>()
+        var weakRefs: [ () -> HeavyArtworkPayload? ] = []
+
+        // Simulate 32 track events arriving while upstream queue is blocked:
+        for index in 0..<32 {
+            autoreleasepool {
+                let payload = HeavyArtworkPayload(id: index)
+                weak var weakPayload = payload
+                weakRefs.append({ weakPayload })
+                let isDrainScheduled = coalescer.enqueue(payload)
+                if index == 0 {
+                    XCTAssertTrue(isDrainScheduled, "First event must schedule drain.")
+                } else {
+                    XCTAssertFalse(isDrainScheduled, "Subsequent events must overwrite without scheduling extra blocks.")
+                }
+            }
+        }
+
+        // Verify that 31 superseded heavy payloads were released immediately on overwrite
+        for index in 0..<31 {
+            XCTAssertNil(weakRefs[index](), "Upstream superseded payload \(index) with 1 MiB artwork must be freed immediately.")
+        }
+        XCTAssertNotNil(weakRefs[31](), "Only the 32nd (latest) payload should remain in memory.")
+
+        autoreleasepool {
+            let latest = coalescer.takeNext()
+            XCTAssertEqual(latest?.id, 31)
+        }
+        XCTAssertNil(weakRefs[31](), "Latest payload must be released once drained.")
+    }
+
+    func testMediaRemoteControllerStartupResetConsumesQueueAndDeliversSubsequentTracks() {
+        final class TrackPayload {
+            let title: String
+            init(_ title: String) { self.title = title }
+        }
+
+        let coalescer = PendingTrackEventCoalescer<TrackPayload>()
+
+        // 1. Simulate startup defaults observing: 3 consecutive resets
+        _ = coalescer.enqueueClear()
+        _ = coalescer.enqueueClear()
+        _ = coalescer.enqueueClear()
+
+        // 2. Simulate 3 consecutive track events arriving right after startup
+        _ = coalescer.enqueue(TrackPayload("Track 1"))
+        _ = coalescer.enqueue(TrackPayload("Track 2"))
+        _ = coalescer.enqueue(TrackPayload("Track 3"))
+
+        // 3. Drain must take the coalesced action without stalling
+        guard let action = coalescer.takeNextAction() else {
+            XCTFail("Queue must not stall after startup reset.")
+            return
+        }
+
+        XCTAssertTrue(action.includesClear, "Startup clear must be preserved prior to track delivery.")
+        XCTAssertEqual(action.event?.title, "Track 3", "Latest track event must be preserved and consumed.")
+
+        // Drain until empty, just like the while loop in drainPendingEvents
+        XCTAssertNil(coalescer.takeNextAction(), "Queue must be empty after popping coalesced action.")
+
+        // 4. Verify that subsequent events after drain schedule new drain turns normally
+        let canScheduleNext = coalescer.enqueue(TrackPayload("Track 4"))
+        XCTAssertTrue(canScheduleNext, "Queue must be open for new events after drain.")
+    }
+
+    func testMediaRemoteControllerPreFiltersUnmonitoredSourceToPreventOverwritingMonitoredSource() {
+        struct MockTrackEvent {
+            let title: String
+            let bundleIdentifier: String
+        }
+
+        let coalescer = PendingTrackEventCoalescer<MockTrackEvent>()
+        let monitoredBundleID = PlayerProfile.appleMusic.bundleIdentifier
+
+        func enqueueIfMonitored(_ event: MockTrackEvent) -> Bool {
+            let decision = MonitoredSourceDecision.decide(
+                monitoredBundleIdentifier: monitoredBundleID,
+                incomingBundleIdentifier: event.bundleIdentifier
+            )
+            guard decision == .deliver else { return false }
+            return coalescer.enqueue(event)
+        }
+
+        // When queue is busy, Music arrives first, then unmonitored Spotify arrives
+        let musicEvent = MockTrackEvent(title: "Music Track", bundleIdentifier: monitoredBundleID)
+        let spotifyEvent = MockTrackEvent(title: "Spotify Track", bundleIdentifier: "com.spotify.client")
+
+        let scheduledMusic = enqueueIfMonitored(musicEvent)
+        XCTAssertTrue(scheduledMusic, "Monitored Music track must be enqueued.")
+
+        let acceptedSpotify = enqueueIfMonitored(spotifyEvent)
+        XCTAssertFalse(acceptedSpotify, "Unmonitored Spotify track must be rejected before enqueue.")
+
+        // Verify that the queue retains Music Track and was not overwritten by Spotify Track
+        let pending = coalescer.takeNext()
+        XCTAssertEqual(pending?.title, "Music Track", "Monitored track must not be overwritten by unmonitored source.")
+    }
+
+    func testFallbackFormatReadbackPreservesPendingCandidateForRetry() {
+        let targetRate: Float64 = 44_100
+        let targetBitDepth = 24
+        let fallbackRate: Float64 = 44_100
+        let fallbackBitDepth = 16
+
+        // Simulate state updates after format failure
+        var previousSampleRate: Float64? = nil
+        var previousBitDepth: Int? = nil
+        var pendingCandidate: RateGateDecisionPolicy.CandidateTracking? = RateGateDecisionPolicy.CandidateTracking(
+            rate: targetRate,
+            generation: 1,
+            firstSeen: Date()
+        )
+
+        func updateSampleRateSimulated(
+            _ sampleRate: Float64,
+            bitDepth: Int?,
+            preserveCandidate: Bool = false
+        ) {
+            previousSampleRate = sampleRate
+            if !preserveCandidate {
+                pendingCandidate = nil
+            }
+            previousBitDepth = bitDepth
+        }
+
+        // The actual bug: when reading back fallback device rate, calling updateSampleRate wiped pendingCandidate.
+        // With preserveCandidate: true, pendingCandidate remains preserved.
+        updateSampleRateSimulated(fallbackRate, bitDepth: fallbackBitDepth, preserveCandidate: true)
+        XCTAssertNotNil(pendingCandidate, "Fallback device format readback must not wipe pendingCandidate.")
+
+        // Verify SteadyStatePollingPolicy continues to poll because candidate is preserved
+        let shouldPoll = SteadyStatePollingPolicy.shouldPollTrack(
+            hasCurrentTrack: true,
+            isTrackLocked: false,
+            isDeviceMatched: false,
+            hasPendingCandidate: pendingCandidate != nil,
+            appleMusicState: .resolved(targetRate),
+            trackStartedAt: Date(timeIntervalSince1970: 30_000),
+            now: Date(timeIntervalSince1970: 30_030)
+        )
+        XCTAssertTrue(shouldPoll, "Steady state polling must retry when pending candidate is preserved.")
+    }
+
+    func testAutomaticModePendingEventCoalescerProtectsHighPriorityEventUnderLock() {
+        struct MockTakeoverEvent {
+            let title: String
+            let bundleIdentifier: String
+        }
+
+        let coalescer = PendingTrackEventCoalescer<MockTakeoverEvent>()
+        let priority = PlayerProfile.normalizedPriority([PlayerProfile.appleMusic.bundleIdentifier, "com.spotify.client"])
+
+        let musicEvent = MockTakeoverEvent(title: "Music Track", bundleIdentifier: PlayerProfile.appleMusic.bundleIdentifier)
+        let spotifyEvent = MockTakeoverEvent(title: "Spotify Track", bundleIdentifier: "com.spotify.client")
+
+        // 1. Music (higher priority) enqueues
+        let scheduledMusic = coalescer.enqueue(musicEvent, shouldOverwrite: { existing, new in
+            let existingPriority = PlayerTakeoverPolicy.priorityIndex(for: existing.bundleIdentifier, priority: priority)
+            let newPriority = PlayerTakeoverPolicy.priorityIndex(for: new.bundleIdentifier, priority: priority)
+            return newPriority <= existingPriority
+        })
+        XCTAssertTrue(scheduledMusic, "Music event must enqueue.")
+
+        // 2. Spotify (lower priority) arrives while Music is pending
+        let scheduledSpotify = coalescer.enqueue(spotifyEvent, shouldOverwrite: { existing, new in
+            let existingPriority = PlayerTakeoverPolicy.priorityIndex(for: existing.bundleIdentifier, priority: priority)
+            let newPriority = PlayerTakeoverPolicy.priorityIndex(for: new.bundleIdentifier, priority: priority)
+            return newPriority <= existingPriority
+        })
+        XCTAssertFalse(scheduledSpotify, "Lower priority Spotify must be rejected under lock and not overwrite pending Music.")
+
+        // 3. Queue must preserve Music Track
+        let drained = coalescer.takeNext()
+        XCTAssertEqual(drained?.title, "Music Track", "Music event must survive and be consumed.")
+    }
+
+    func testTemporaryLockDecisionRejectsMismatchAndClearsPreviousTrack() {
+        let lockBundleID = PlayerProfile.appleMusic.bundleIdentifier
+        let incomingSpotifyBundleID = "com.spotify.client"
+
+        var clearedNowPlaying = false
+        func checkAcceptance(incomingBundleID: String) -> Bool {
+            if incomingBundleID != lockBundleID {
+                clearedNowPlaying = true
+                return false
+            }
+            return true
+        }
+
+        let accepted = checkAcceptance(incomingBundleID: incomingSpotifyBundleID)
+        XCTAssertFalse(accepted, "Incoming Spotify must be rejected when Music is temporarily locked.")
+        XCTAssertTrue(clearedNowPlaying, "Temporary lock mismatch must clear now playing track.")
+    }
+
+    func testRapidEventsDuringActiveDrainDoNotScheduleRedundantWorkItems() {
+        final class TestEvent {
+            let id: Int
+            init(_ id: Int) { self.id = id }
+        }
+
+        let coalescer = PendingTrackEventCoalescer<TestEvent>()
+
+        // 1. Initial event arrives, schedules drain
+        let scheduledFirst = coalescer.enqueue(TestEvent(0))
+        XCTAssertTrue(scheduledFirst, "Initial event must schedule drain.")
+
+        // 2. Worker thread starts draining: pops event 0
+        var actionsProcessed = [Int]()
+        var drainTurnsScheduled = 0
+
+        while let action = coalescer.takeNextAction() {
+            if let event = action.event {
+                actionsProcessed.append(event.id)
+            }
+
+            // Simulate 128 rapid events arriving while this drain iteration is executing
+            if actionsProcessed.count == 1 {
+                for i in 1...128 {
+                    let scheduled = coalescer.enqueue(TestEvent(i))
+                    if scheduled {
+                        drainTurnsScheduled += 1
+                    }
+                }
+            }
+        }
+
+        // 3. Exactly 0 redundant drain turns should have been scheduled during the active loop
+        XCTAssertEqual(drainTurnsScheduled, 0, "Rapid events during active drain loop must NOT schedule redundant GCD turns.")
+
+        // The while loop must have processed event 0 and then the latest coalesced event 128
+        XCTAssertEqual(actionsProcessed, [0, 128], "While loop should take the latest coalesced event.")
+
+        // 4. Once fully drained, a new event must be able to schedule drain again
+        let scheduledAfterDrain = coalescer.enqueue(TestEvent(999))
+        XCTAssertTrue(scheduledAfterDrain, "New event after drain loop completed must schedule drain.")
+    }
+
+    func testTemporaryLockRejectionEnqueuesClearInSameQueuePreservingCausalOrder() {
+        struct MockEvent: Equatable {
+            let title: String
+        }
+
+        let coalescer = PendingTrackEventCoalescer<MockEvent>()
+
+        // Scenario A: Music is pending in queue, then Spotify (mismatch) triggers enqueueClear()
+        _ = coalescer.enqueue(MockEvent(title: "Music Track"))
+        _ = coalescer.enqueueClear()
+
+        // Strict causal order: clear supersedes earlier pending Music
+        guard let actionA = coalescer.takeNextAction() else {
+            XCTFail("Action must be present")
+            return
+        }
+        XCTAssertTrue(actionA.includesClear)
+        XCTAssertNil(actionA.event, "Music event must be cleared and not run after clear.")
+        XCTAssertNil(coalescer.takeNextAction())
+
+        // Scenario B: Spotify triggers enqueueClear() first, then Music is enqueued
+        _ = coalescer.enqueueClear()
+        _ = coalescer.enqueue(MockEvent(title: "Music Track"))
+
+        guard let actionB = coalescer.takeNextAction() else {
+            XCTFail("Action must be present")
+            return
+        }
+        switch actionB {
+        case .clearThenEvent(let event):
+            XCTAssertEqual(event.title, "Music Track", "Clear must execute before Music event, not resurrect old state.")
+        default:
+            XCTFail("Expected clearThenEvent, got \(actionB)")
+        }
+    }
+
+    func testCoalescedPauseAndResumePreservesResumeState() {
+        struct MockQueuedEvent {
+            let trackID: String
+            let isPlaying: Bool
+            var hasResumedFromPause: Bool = false
+        }
+
+        let coalescer = PendingTrackEventCoalescer<MockQueuedEvent>()
+
+        let pauseEvent = MockQueuedEvent(trackID: "song1", isPlaying: false, hasResumedFromPause: false)
+        let resumeEvent = MockQueuedEvent(trackID: "song1", isPlaying: true, hasResumedFromPause: false)
+
+        // 1. Pause arrives while queue is busy
+        _ = coalescer.enqueue(pauseEvent)
+
+        // 2. Resume arrives before pause is drained
+        _ = coalescer.enqueue(
+            resumeEvent,
+            merge: { existing, new in
+                let isSameTrack = existing.trackID == new.trackID
+                let resumed = isSameTrack && (
+                    existing.hasResumedFromPause ||
+                    (existing.isPlaying == false && new.isPlaying != false)
+                )
+                return MockQueuedEvent(
+                    trackID: new.trackID,
+                    isPlaying: new.isPlaying,
+                    hasResumedFromPause: resumed
+                )
+            }
+        )
+
+        // 3. Popping action must have hasResumedFromPause == true
+        guard let action = coalescer.takeNextAction(), let event = action.event else {
+            XCTFail("Coalesced event must be present")
+            return
+        }
+        XCTAssertTrue(event.isPlaying)
+        XCTAssertTrue(event.hasResumedFromPause, "Coalescing pause and resume must preserve hasResumedFromPause.")
+    }
+
+    func testSameTrackNotificationResetsDetectionBaselineAllowingRevalidationPastWindow() {
+        let trackStart = Date(timeIntervalSince1970: 1000)
+        let settlingPassed = trackStart.addingTimeInterval(12.0) // 12 seconds in
+        let lastQuery = trackStart.addingTimeInterval(1.0)
+
+        // Without resetting trackStartedAt, revalidation and polling are blocked at t = 12s
+        let blockedRevalidation = AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+            lastQueriedAt: lastQuery,
+            now: settlingPassed,
+            trackStartedAt: trackStart,
+            isTrackLocked: true
+        )
+        XCTAssertFalse(blockedRevalidation, "Without baseline reset, revalidation is blocked after 8s.")
+
+        let blockedPolling = SteadyStatePollingPolicy.shouldPollTrack(
+            hasCurrentTrack: true,
+            isTrackLocked: true,
+            isDeviceMatched: true,
+            hasPendingCandidate: false,
+            appleMusicState: .resolved(44_100),
+            trackStartedAt: trackStart,
+            now: settlingPassed
+        )
+        XCTAssertFalse(blockedPolling, "Without baseline reset, steady-state polling is blocked after 8s.")
+
+        // When a new same-track notification arrives at 12s, baseline is re-anchored to t = 12s
+        let updatedBaseline = settlingPassed
+        let allowedRevalidation = AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+            lastQueriedAt: lastQuery,
+            now: settlingPassed,
+            trackStartedAt: updatedBaseline,
+            isTrackLocked: true
+        )
+        XCTAssertTrue(allowedRevalidation, "Re-anchored baseline at 12s allows revalidation for late-arriving format changes.")
+
+        let allowedPolling = SteadyStatePollingPolicy.shouldPollTrack(
+            hasCurrentTrack: true,
+            isTrackLocked: true,
+            isDeviceMatched: true,
+            hasPendingCandidate: false,
+            appleMusicState: .waiting,
+            trackStartedAt: updatedBaseline,
+            now: settlingPassed.addingTimeInterval(1.0)
+        )
+        XCTAssertTrue(allowedPolling, "Re-anchored baseline at 12s with .waiting state enables steady-state polling.")
+    }
+
+    func testSameTrackNotificationPreservesPlaybackStartTimeSoAtmosEvidenceDoesNotExpire() {
+        let playbackStartedAt = Date(timeIntervalSince1970: 100.0)
+        let trackID = "atmos-song"
+        let trackTitle = "Spatial Audio Song"
+
+        let atmosStat = CMPlayerStats(
+            sampleRate: 48_000,
+            bitDepth: 24,
+            date: Date(timeIntervalSince1970: 100.5), // arrived at t + 0.5s
+            isAppleMusicFormat: true,
+            isDolbyAtmos: true,
+            trackIdentifier: trackID
+        )
+
+        // 1. Initial check: Atmos evidence is fresh relative to playbackStartedAt
+        let initialOverride = AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+            formatEvidence: atmosStat,
+            expectedTrackID: trackID,
+            expectedTrackTitle: trackTitle,
+            trackStartedAt: playbackStartedAt
+        )
+        XCTAssertTrue(initialOverride, "Atmos log timestamped after playbackStartedAt must be valid.")
+
+        let initialEffectiveRate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: 96_000,
+            decoderEvidence: nil,
+            formatEvidence: atmosStat,
+            trackStartedAt: playbackStartedAt,
+            expectedTrackID: trackID,
+            expectedTrackTitle: trackTitle
+        )
+        XCTAssertEqual(initialEffectiveRate, 48_000, "Atmos 48 kHz takes precedence over AppleScript 96 kHz.")
+
+        // 2. At t = 112.0s (12s later), a same-track metadata notification arrives
+        let sameTrackNotificationAt = Date(timeIntervalSince1970: 112.0)
+        let requeryStartedAt = sameTrackNotificationAt
+
+        // Playback start time remains playbackStartedAt (100.0s), NOT overwritten by requeryStartedAt (112.0s)
+        let overrideAfterMetadataUpdate = AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+            formatEvidence: atmosStat,
+            expectedTrackID: trackID,
+            expectedTrackTitle: trackTitle,
+            trackStartedAt: playbackStartedAt
+        )
+        XCTAssertTrue(overrideAfterMetadataUpdate, "Atmos evidence must NOT expire when same-track metadata notification arrives.")
+
+        let effectiveRateAfterMetadataUpdate = AppleMusicFormatPolicy.effectiveSampleRate(
+            scriptRate: 96_000,
+            decoderEvidence: nil,
+            formatEvidence: atmosStat,
+            trackStartedAt: playbackStartedAt,
+            expectedTrackID: trackID,
+            expectedTrackTitle: trackTitle
+        )
+        XCTAssertEqual(effectiveRateAfterMetadataUpdate, 48_000, "Effective rate must keep Atmos 48 kHz instead of reverting to 96 kHz.")
+
+        // Negative check: If trackStartedAt had been overwritten with 112.0s, Atmos log at 100.5s would be rejected
+        let wronglyOverwrittenOverride = AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
+            formatEvidence: atmosStat,
+            expectedTrackID: trackID,
+            expectedTrackTitle: trackTitle,
+            trackStartedAt: requeryStartedAt
+        )
+        XCTAssertFalse(wronglyOverwrittenOverride, "Overwriting trackStartedAt with requeryStartedAt would wrongly drop Atmos evidence.")
+
+        // 3. Re-query window uses requeryStartedAt, allowing revalidation within its bounded window
+        let allowsRevalidation = AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
+            lastQueriedAt: Date(timeIntervalSince1970: 101.0),
+            now: sameTrackNotificationAt,
+            trackStartedAt: requeryStartedAt,
+            isTrackLocked: true
+        )
+        XCTAssertTrue(allowsRevalidation, "Re-query window is active based on requeryStartedAt.")
+    }
+
+    func testPlayerPriorityChangeResetsArbitrationWithoutClearingNowPlayingTrack() {
+        struct MockQueueTrack: Equatable {
+            let title: String
+        }
+
+        let coalescer = PendingTrackEventCoalescer<MockQueueTrack>()
+
+        // 1. Standalone priority change enqueues resetArbitration
+        let scheduled = coalescer.enqueueResetArbitration()
+        XCTAssertTrue(scheduled, "Reset arbitration should schedule drain.")
+
+        guard let action = coalescer.takeNextAction() else {
+            XCTFail("Action must be present.")
+            return
+        }
+        XCTAssertTrue(action.includesResetArbitration, "Action must be resetArbitration.")
+        XCTAssertFalse(action.includesClear, "Resetting player arbitration MUST NOT clear now-playing track.")
+        XCTAssertNil(action.event)
+        XCTAssertNil(coalescer.takeNextAction())
+
+        // 2. Pending event followed by resetArbitration: preserves event under new arbitration
+        _ = coalescer.enqueue(MockQueueTrack(title: "Music Track"))
+        _ = coalescer.enqueueResetArbitration()
+
+        guard let actionWithEvent = coalescer.takeNextAction() else {
+            XCTFail("Action must be present.")
+            return
+        }
+        XCTAssertTrue(actionWithEvent.includesResetArbitration)
+        XCTAssertFalse(actionWithEvent.includesClear, "Arbitration reset with pending event must not clear now playing track.")
+        XCTAssertEqual(actionWithEvent.event?.title, "Music Track", "Pending event must be preserved.")
+        XCTAssertNil(coalescer.takeNextAction())
+
+        // 3. Explicit clear still works when required (e.g. temporary lock mismatch)
+        _ = coalescer.enqueue(MockQueueTrack(title: "Spotify Track"))
+        _ = coalescer.enqueueClear()
+
+        guard let clearAction = coalescer.takeNextAction() else {
+            XCTFail("Clear action must be present.")
+            return
+        }
+        XCTAssertTrue(clearAction.includesClear, "Explicit clear must still clear now playing track.")
+        XCTAssertNil(clearAction.event)
+    }
+
 }

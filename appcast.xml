@@ -6,6 +6,31 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.10 (构建 46)</title>
+            <pubDate>Wed, 11 Nov 2026 10:45:54 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.10 重点优化后台内存占用与事件队列调度，并修复多播放器仲裁及同曲目格式复查的多处边界问题：</p>
+                <p>RateSync 3.2.10 optimizes background memory usage and event-queue coalescing, and fixes edge cases in multi-player arbitration and same-track format revalidation:</p>
+                <h4>新功能与修复 / Improvements and Fixes</h4>
+                <ul>
+                    <li>优化内存占用与后台轮询：去重改用紧凑的封面 SHA-256 摘要，队列阻塞时单槽合并积压事件并立即释放被覆盖的封面数据；日志扫描加入 <code>autoreleasepool</code> 与进程校验缓存；稳态匹配及暂停后跳过重复查询与日志扫描（回应 Issue #5）。</li>
+                    <li>优化多播放器仲裁与队列因果序：调整播放器优先级或重置仲裁状态不再清空当前已刷新的曲目；临时锁定下的清空与曲目事件走同一队列以保持严格顺序；消除排空过程的冗余任务调度。</li>
+                    <li>完善设备变更、位深重试与暂停恢复逻辑：播放中切换输出设备时重新评估当前曲目；同采样率位深设置失败后保留待重试候选；合并快速暂停恢复时保留状态变化以触发复查。</li>
+                    <li>改进同曲目迟到格式变更检测：收到同曲目元数据通知时仅重置重查时间窗口而保留原始开播时间，避免使有效的杜比全景声 / 空间音频日志证据误判过期。</li>
+                    <li>Lower memory usage &amp; idle polling: deduplicate track events via compact SHA-256 artwork digests, coalesce backlogged queue events into a single slot to release superseded artwork immediately, wrap OSLog queries in <code>autoreleasepool</code> with a per-PID verification cache, and skip redundant polling once settled or paused (addresses Issue #5).</li>
+                    <li>Reliable playback arbitration &amp; strict queue ordering: separate player arbitration resets from clearing now-playing tracks so priority changes do not wipe freshly refreshed tracks, serialize temporary-lock clears in the same coalescer queue, and eliminate redundant GCD drain scheduling.</li>
+                    <li>Device switch, bit-depth retry &amp; pause-resume fixes: re-evaluate the active track on output device changes, retain pending candidates when same-rate bit-depth switching fails so polling retries, and preserve pause-to-resume transitions across coalesced events.</li>
+                    <li>Late-format detection without expiring Atmos evidence: keep the original playback start time intact when re-anchoring the re-query window on same-track metadata updates, preventing valid Dolby Atmos / Spatial Audio logs from being treated as stale.</li>
+                </ul>
+                <p>如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！</p>
+                <p>If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.10">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.10</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.10/RateSync-3.2.10.dmg" sparkle:version="46" sparkle:shortVersionString="3.2.10" sparkle:edSignature="MwF8Ihq2qlA213YWMQhTUcZVcVeV2qkPufN6RtUkt1JIRIe5e6c90iqR8J6xNTt08tRrinLGdqxt/DoQolZgCA==" length="4939058" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.9 (构建 45)</title>
             <pubDate>Sat, 07 Nov 2026 16:40:39 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

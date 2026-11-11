@@ -169,6 +169,7 @@ enum AppleMusicSampleRateQueryPolicy {
 
 enum AppleMusicFormatProbePolicy {
     static let refreshInterval: TimeInterval = 1.5
+    static let maxProbeWindow: TimeInterval = 10.0
 
     static func retryDelay(after elapsed: TimeInterval, hasPriorityEvidence: Bool) -> TimeInterval? {
         guard !hasPriorityEvidence, elapsed.isFinite else { return nil }
@@ -179,16 +180,25 @@ enum AppleMusicFormatProbePolicy {
 
     /// The initial probe is bounded by the six-second current-track window,
     /// but a decoder line can arrive after that probe completed. Allow a
-    /// cooldown-limited follow-up scan for the same playback generation.
+    /// cooldown-limited follow-up scan for the same playback generation within
+    /// `maxProbeWindow`, while skipping scans when paused or inactive.
     static func shouldSchedule(
         generation: UInt64,
         scheduledGeneration: UInt64?,
         completedGeneration: UInt64?,
         lastCompletedAt: Date?,
-        now: Date
+        now: Date,
+        trackStartedAt: Date? = nil,
+        sampleRateState: AppleMusicSampleRateState = .waiting
     ) -> Bool {
+        if sampleRateState == .notPlaying || sampleRateState == .inactive {
+            return false
+        }
         guard scheduledGeneration != generation else { return false }
         guard completedGeneration == generation else { return true }
+        if let trackStartedAt, now.timeIntervalSince(trackStartedAt) > maxProbeWindow {
+            return false
+        }
         guard let lastCompletedAt else { return true }
         return now.timeIntervalSince(lastCompletedAt) >= refreshInterval
     }
@@ -196,12 +206,20 @@ enum AppleMusicFormatProbePolicy {
 
 enum AppleMusicPlaybackRecoveryPolicy {
     static let retryInterval: TimeInterval = 3.0
+    static let maxResumeChecks: Int = 2
 
     /// A paused player can keep the same Now Playing track snapshot. Keep a
-    /// low-frequency recheck alive so a later resume is not dependent on a
-    /// second metadata event from MediaRemote.
-    static func retryDelay(hasCurrentTrack: Bool) -> TimeInterval? {
-        hasCurrentTrack ? retryInterval : nil
+    /// bounded recheck for unlocked tracks so a quick pause/resume right after
+    /// track change is caught, without polling indefinitely while paused.
+    static func retryDelay(
+        hasCurrentTrack: Bool,
+        isTrackLocked: Bool = false,
+        attempts: Int = 0
+    ) -> TimeInterval? {
+        guard hasCurrentTrack, !isTrackLocked, attempts < maxResumeChecks else {
+            return nil
+        }
+        return retryInterval
     }
 }
 
@@ -226,10 +244,21 @@ enum AppleMusicCurrentTrackRatePolicy {
     /// high-resolution track is settling. Recheck the same track after this
     /// short cooldown instead of treating the first valid value as final.
     static let revalidationInterval: TimeInterval = 2.0
+    static let maxRevalidationWindow: TimeInterval = 8.0
     static let recoveryProbeInterval: TimeInterval = 2.5
     static let maxRecoveryAttempts: Int = 2
 
-    static func shouldRevalidate(lastQueriedAt: Date?, now: Date) -> Bool {
+    static func shouldRevalidate(
+        lastQueriedAt: Date?,
+        now: Date,
+        trackStartedAt: Date? = nil,
+        isTrackLocked: Bool = false
+    ) -> Bool {
+        if isTrackLocked,
+           let trackStartedAt,
+           now.timeIntervalSince(trackStartedAt) > maxRevalidationWindow {
+            return false
+        }
         guard let lastQueriedAt else { return true }
         return now.timeIntervalSince(lastQueriedAt) >= revalidationInterval
     }
@@ -265,6 +294,266 @@ enum AppleMusicCurrentTrackRatePolicy {
 enum TrackRequestPolicy {
     static func isCurrent(expectedGeneration: UInt64, currentGeneration: UInt64) -> Bool {
         expectedGeneration == currentGeneration
+    }
+}
+
+enum SteadyStatePollingPolicy {
+    static let settlingWindow: TimeInterval = 8.0
+
+    struct ConfirmedDeviceMatch: Equatable {
+        let deviceUID: String?
+        let sampleRate: Float64
+        let bitDepth: Int?
+        let sourceSampleRate: Float64?
+
+        init(
+            deviceUID: String?,
+            sampleRate: Float64,
+            bitDepth: Int? = nil,
+            sourceSampleRate: Float64? = nil
+        ) {
+            self.deviceUID = deviceUID
+            self.sampleRate = sampleRate
+            self.bitDepth = bitDepth
+            self.sourceSampleRate = sourceSampleRate
+        }
+    }
+
+    /// Returns whether the active output device currently matches the format
+    /// already confirmed for the current track (either via a completed switch
+    /// in `lockedSampleRate` or an equal-rate confirmation in `confirmedMatch`).
+    static func isDeviceMatched(
+        lockedSampleRate: Float64?,
+        lockedBitDepth: Int? = nil,
+        lockedDeviceUID: String? = nil,
+        confirmedMatch: ConfirmedDeviceMatch? = nil,
+        currentDeviceUID: String?,
+        currentDeviceSampleRate: Float64?,
+        currentDeviceBitDepth: Int? = nil,
+        enableBitDepthDetection: Bool = false
+    ) -> Bool {
+        let expectedSampleRate: Float64
+        let expectedBitDepth: Int?
+        let expectedDeviceUID: String?
+
+        if let confirmedMatch {
+            expectedSampleRate = confirmedMatch.sampleRate
+            expectedBitDepth = confirmedMatch.bitDepth
+            expectedDeviceUID = confirmedMatch.deviceUID
+        } else if let lockedSampleRate {
+            expectedSampleRate = lockedSampleRate
+            expectedBitDepth = lockedBitDepth
+            expectedDeviceUID = lockedDeviceUID
+        } else {
+            return false
+        }
+
+        if let expectedDeviceUID, let currentDeviceUID, expectedDeviceUID != currentDeviceUID {
+            return false
+        } else if expectedDeviceUID != nil && currentDeviceUID == nil {
+            return false
+        }
+
+        guard let currentDeviceSampleRate,
+              currentDeviceSampleRate == expectedSampleRate else {
+            return false
+        }
+
+        if enableBitDepthDetection,
+           let expectedBitDepth,
+           let currentDeviceBitDepth,
+           currentDeviceBitDepth != expectedBitDepth {
+            return false
+        }
+
+        return true
+    }
+
+    /// Determines whether the periodic safety-net poll (`startPolling`) needs to run
+    /// the full detection pipeline for the current track.
+    ///
+    /// - When Apple Music is paused (`.notPlaying`), periodic polling is skipped so
+    ///   AppleScript and OSLogStore are not repeatedly queried while paused.
+    /// - Once the current track has a confirmed device match on the active output device,
+    ///   no pending candidate is waiting for confirmation, and the initial settling window
+    ///   has elapsed, periodic polling skips in O(1) without querying AppleScript or OSLogStore.
+    static func shouldPollTrack(
+        hasCurrentTrack: Bool,
+        isTrackLocked: Bool,
+        isDeviceMatched: Bool? = nil,
+        hasPendingCandidate: Bool,
+        appleMusicState: AppleMusicSampleRateState,
+        trackStartedAt: Date?,
+        now: Date
+    ) -> Bool {
+        guard hasCurrentTrack else { return false }
+        if appleMusicState == .notPlaying {
+            return false
+        }
+        let settledOnDevice = isDeviceMatched ?? isTrackLocked
+        if settledOnDevice && !hasPendingCandidate {
+            if let trackStartedAt {
+                return now.timeIntervalSince(trackStartedAt) <= settlingWindow
+            }
+            return false
+        }
+        return true
+    }
+}
+
+/// Coalesces rapid or backlogged track-change and clear events into a single slot
+/// while preserving causal ordering between `enqueue(_:)` and `enqueueClear()`.
+///
+/// When the serial switching queue is busy (e.g. during an `OSLogStore` scan),
+/// newly arriving `TrackInfo` events (each carrying ~1–4 MiB of artwork) overwrite
+/// `pending` under a lock and immediately release the superseded event instead of
+/// accumulating N separate closures in the GCD queue.
+final class PendingTrackEventCoalescer<Event> {
+    enum Action {
+        case event(Event)
+        case clear
+        case clearThenEvent(Event)
+        case resetArbitration
+        case resetArbitrationThenEvent(Event)
+
+        var event: Event? {
+            switch self {
+            case .event(let event), .clearThenEvent(let event), .resetArbitrationThenEvent(let event):
+                return event
+            case .clear, .resetArbitration:
+                return nil
+            }
+        }
+
+        var includesClear: Bool {
+            switch self {
+            case .clear, .clearThenEvent:
+                return true
+            case .event, .resetArbitration, .resetArbitrationThenEvent:
+                return false
+            }
+        }
+
+        var includesResetArbitration: Bool {
+            switch self {
+            case .resetArbitration, .resetArbitrationThenEvent:
+                return true
+            case .event, .clear, .clearThenEvent:
+                return false
+            }
+        }
+    }
+
+    private let lock = NSLock()
+    private var pending: Action?
+    private var isDrainScheduled = false
+
+    /// Stores only the latest event, immediately releasing any superseded event.
+    /// Preserves causal ordering if a clear occurred prior to this event while queued.
+    /// When `shouldOverwrite` is provided and an existing event is pending, calls it under the lock;
+    /// if it returns `false`, the new event is rejected without overwriting.
+    /// When `merge` is provided and an existing event is pending, it merges existing state into the new event.
+    /// Returns `true` if the caller should schedule a drain block on the target queue.
+    func enqueue(
+        _ event: Event,
+        shouldOverwrite: ((Event, Event) -> Bool)? = nil,
+        merge: ((Event, Event) -> Event)? = nil
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let existing = pending?.event {
+            if let shouldOverwrite, !shouldOverwrite(existing, event) {
+                return false
+            }
+            let merged = merge?(existing, event) ?? event
+            switch pending {
+            case .event:
+                pending = .event(merged)
+            case .clearThenEvent:
+                pending = .clearThenEvent(merged)
+            case .resetArbitrationThenEvent:
+                pending = .resetArbitrationThenEvent(merged)
+            default:
+                pending = .event(merged)
+            }
+        } else {
+            switch pending {
+            case nil, .event:
+                pending = .event(event)
+            case .clear, .clearThenEvent:
+                pending = .clearThenEvent(event)
+            case .resetArbitration, .resetArbitrationThenEvent:
+                pending = .resetArbitrationThenEvent(event)
+            }
+        }
+        if isDrainScheduled {
+            return false
+        }
+        isDrainScheduled = true
+        return true
+    }
+
+    /// Enqueues a clear action, immediately releasing any pending event that arrived before it.
+    /// Returns `true` if the caller should schedule a drain block on the target queue.
+    @discardableResult
+    func enqueueClear() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        pending = .clear
+        if isDrainScheduled {
+            return false
+        }
+        isDrainScheduled = true
+        return true
+    }
+
+    /// Enqueues a reset of player arbitration state without clearing the now-playing track on output devices.
+    /// If an event is pending, preserves it so it is processed under the fresh arbitration state.
+    /// Returns `true` if the caller should schedule a drain block on the target queue.
+    @discardableResult
+    func enqueueResetArbitration() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        switch pending {
+        case nil:
+            pending = .resetArbitration
+        case .event(let event):
+            pending = .resetArbitrationThenEvent(event)
+        case .clear, .clearThenEvent:
+            // Explicit clear already resets arbitration and clears the track
+            break
+        case .resetArbitration, .resetArbitrationThenEvent:
+            break
+        }
+        if isDrainScheduled {
+            return false
+        }
+        isDrainScheduled = true
+        return true
+    }
+
+    /// Atomically pops the next coalesced action (including whether a clear preceded the latest event).
+    /// Keeps `isDrainScheduled = true` while items remain so incoming events coalesce into the active drain loop;
+    /// resets `isDrainScheduled = false` only when the queue is drained and returns `nil`.
+    func takeNextAction() -> Action? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let next = pending else {
+            isDrainScheduled = false
+            return nil
+        }
+        pending = nil
+        return next
+    }
+
+    /// Convenience for callers/tests that only inspect the latest pending event.
+    func takeNext() -> Event? {
+        takeNextAction()?.event
+    }
+
+    func clear() {
+        _ = enqueueClear()
     }
 }
 

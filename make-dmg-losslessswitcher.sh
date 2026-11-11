@@ -10,8 +10,8 @@ set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="RateSync"
-VERSION="3.2.9"
-BUILD="45"
+VERSION="3.2.10"
+BUILD="46"
 BUILD_CONFIGURATION="${RATESYNC_BUILD_CONFIGURATION:-Release}"
 OUT="${1:-$PROJ_DIR/RateSync-$VERSION.dmg}"
 

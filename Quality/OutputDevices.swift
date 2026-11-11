@@ -44,6 +44,7 @@ class OutputDevices: ObservableObject {
     private var previousSampleRate: Float64?
     private var previousBitDepth: Int?
     private var currentTrackStartedAt: Date?
+    private var currentTrackRequeryStartedAt: Date?
     private var lastTrackChangeDate: Date?
     /// Distinguishes a replay/resume of identical MediaRemote metadata from
     /// callbacks belonging to the previous playback generation.
@@ -66,8 +67,15 @@ class OutputDevices: ObservableObject {
     private var appleMusicAtmosProbeCompletedGeneration: UInt64?
     private var appleMusicAtmosProbeLastCompletedAt: Date?
     private var appleMusicResumeRetryWorkItem: DispatchWorkItem?
+    private var appleMusicResumeCheckAttempts: Int = 0
     private var appleMusicRecoveryWorkItem: DispatchWorkItem?
     private var appleMusicRecoveryAttempts: Int = 0
+    private struct QueuedTrackEvent {
+        let track: TrackInfo
+        let eventDate: Date?
+        var hasResumedFromPause: Bool = false
+    }
+    private let pendingTrackChangeCoalescer = PendingTrackEventCoalescer<QueuedTrackEvent>()
     // Cap on retained per-track results, so long listening sessions cannot
     // grow the caches without bound (one entry per distinct MediaTrack).
     private static let maxCachedTracks = 200
@@ -101,6 +109,8 @@ class OutputDevices: ObservableObject {
     private static let probeMissesBeforeSkip = 2
     private var trackAndSample = [MediaTrack : Float64]()
     private var trackAndBitDepth = [MediaTrack : Int]()
+    private var trackLockedDeviceUID = [MediaTrack : String]()
+    private var trackDeviceMatch = [MediaTrack : SteadyStatePollingPolicy.ConfirmedDeviceMatch]()
     private var appleMusicFormatEvidence: CMPlayerStats?
     private var appleMusicDecoderFormatEvidence: CMPlayerStats?
     private var appleMusicFallbackFormat: CMPlayerStats?
@@ -128,9 +138,10 @@ class OutputDevices: ObservableObject {
             })
         
         defaultChangesCancellable =
-            NotificationCenter.default.publisher(for: .defaultOutputDeviceChanged).sink(receiveValue: { _ in
+            NotificationCenter.default.publisher(for: .defaultOutputDeviceChanged).sink(receiveValue: { [weak self] _ in
+                guard let self else { return }
                 self.defaultOutputDevice = self.coreAudio.defaultOutputDevice
-                self.getDeviceSampleRate()
+                self.outputDeviceDidChange()
             })
 
         nominalSampleRateChangesCancellable =
@@ -156,8 +167,8 @@ class OutputDevices: ObservableObject {
                 }
             }
         
-        outputSelectionCancellable = $selectedOutputDevice.sink(receiveValue: { _ in
-            self.getDeviceSampleRate()
+        outputSelectionCancellable = $selectedOutputDevice.dropFirst().sink(receiveValue: { [weak self] _ in
+            self?.outputDeviceDidChange()
         })
         
         enableBitDepthDetectionCancellable = Defaults.shared.$userPreferBitDepthDetection.sink(receiveValue: { newValue in
@@ -228,7 +239,7 @@ class OutputDevices: ObservableObject {
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.scheduleSwitchForCurrentTrack()
+                self.schedulePollingCheckForCurrentTrack()
             }
     }
     
@@ -236,6 +247,50 @@ class OutputDevices: ObservableObject {
         processQueue.async { [weak self] in
             self?.refreshCurrentOutputFormat()
         }
+    }
+
+    func outputDeviceDidChange() {
+        processQueue.async { [weak self] in
+            guard let self else { return }
+            self.refreshCurrentOutputFormat()
+            self.pendingCandidate = nil
+            guard let currentTrack = self.currentTrack else { return }
+            self.switchLatestSampleRate(for: currentTrack, generation: self.currentTrackGeneration)
+        }
+    }
+
+    private func hasConfirmedTrackFormat(for track: MediaTrack) -> Bool {
+        trackAndSample[track] != nil || trackDeviceMatch[track] != nil
+    }
+
+    private func isTrackLockedOnDevice(_ track: MediaTrack, device: AudioDevice?) -> Bool {
+        guard let lockedRate = trackAndSample[track],
+              let deviceRate = device?.nominalSampleRate,
+              deviceRate == lockedRate else {
+            return false
+        }
+        if let lockedUID = trackLockedDeviceUID[track],
+           let currentUID = device?.uid,
+           lockedUID != currentUID {
+            return false
+        }
+        return true
+    }
+
+    private func isCurrentDeviceMatched(for track: MediaTrack, device: AudioDevice?) -> Bool {
+        let currentBitDepth = device?.streams(scope: .output)?.first?.physicalFormat
+            .map { Int($0.mBitsPerChannel) }
+            .flatMap { $0 > 0 ? $0 : nil }
+        return SteadyStatePollingPolicy.isDeviceMatched(
+            lockedSampleRate: trackAndSample[track],
+            lockedBitDepth: trackAndBitDepth[track],
+            lockedDeviceUID: trackLockedDeviceUID[track],
+            confirmedMatch: trackDeviceMatch[track],
+            currentDeviceUID: device?.uid,
+            currentDeviceSampleRate: device?.nominalSampleRate,
+            currentDeviceBitDepth: currentBitDepth,
+            enableBitDepthDetection: enableBitDepthDetection
+        )
     }
 
     private func refreshCurrentOutputFormat() {
@@ -350,6 +405,27 @@ class OutputDevices: ObservableObject {
         processQueue.async { [weak self] in
             guard let self else { return }
             guard let currentTrack = self.currentTrack else { return }
+            self.switchLatestSampleRate(for: currentTrack)
+        }
+    }
+
+    private func schedulePollingCheckForCurrentTrack() {
+        processQueue.async { [weak self] in
+            guard let self else { return }
+            guard let currentTrack = self.currentTrack else { return }
+            let activeDevice = self.selectedOutputDevice ?? self.defaultOutputDevice
+            let deviceMatched = self.isCurrentDeviceMatched(for: currentTrack, device: activeDevice)
+            guard SteadyStatePollingPolicy.shouldPollTrack(
+                hasCurrentTrack: true,
+                isTrackLocked: self.isTrackLockedOnDevice(currentTrack, device: activeDevice),
+                isDeviceMatched: deviceMatched,
+                hasPendingCandidate: self.pendingCandidate != nil,
+                appleMusicState: self.appleMusicSampleRateState,
+                trackStartedAt: self.currentTrackRequeryStartedAt ?? self.currentTrackStartedAt,
+                now: Date()
+            ) else {
+                return
+            }
             self.switchLatestSampleRate(for: currentTrack)
         }
     }
@@ -484,15 +560,22 @@ class OutputDevices: ObservableObject {
             return
         case .notPlaying:
             // MediaRemote can retain the same track snapshot across pause/resume.
-            // Reset the six-second window when playback resumes; otherwise a
-            // long pause would make the first resumed query look timed out.
+            // Reset the detection and query windows when playback resumes; otherwise a
+            // long pause would make the first resumed query look timed out or settled.
+            let resumedAt = Date()
+            currentTrackStartedAt = resumedAt
+            currentTrackRequeryStartedAt = resumedAt
             appleMusicSampleRateState = .waiting
-            appleMusicSampleRateWaitStartedAt = Date()
+            appleMusicSampleRateWaitStartedAt = resumedAt
+            appleMusicAtmosProbeCompletedGeneration = nil
+            appleMusicAtmosProbeLastCompletedAt = nil
         case .resolved(let sampleRate):
             let now = Date()
             guard AppleMusicCurrentTrackRatePolicy.shouldRevalidate(
                 lastQueriedAt: appleMusicSampleRateLastQueriedAt,
-                now: now
+                now: now,
+                trackStartedAt: currentTrackRequeryStartedAt ?? currentTrackStartedAt,
+                isTrackLocked: hasConfirmedTrackFormat(for: expectedTrack)
             ) else {
                 applyAppleMusicCurrentTrackSampleRate(
                     sampleRate,
@@ -663,9 +746,14 @@ class OutputDevices: ObservableObject {
     ) {
         guard isExpectedTrackCurrent(expectedTrack, generation: generation),
               appleMusicResumeRetryWorkItem == nil,
-              let delay = AppleMusicPlaybackRecoveryPolicy.retryDelay(hasCurrentTrack: true) else {
+              let delay = AppleMusicPlaybackRecoveryPolicy.retryDelay(
+                  hasCurrentTrack: true,
+                  isTrackLocked: hasConfirmedTrackFormat(for: expectedTrack),
+                  attempts: appleMusicResumeCheckAttempts
+              ) else {
             return
         }
+        appleMusicResumeCheckAttempts += 1
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -715,10 +803,16 @@ class OutputDevices: ObservableObject {
            cachedSampleRate != effectiveRate {
             trackAndSample.removeValue(forKey: expectedTrack)
             trackAndBitDepth.removeValue(forKey: expectedTrack)
+            trackLockedDeviceUID.removeValue(forKey: expectedTrack)
             pendingCandidate = nil
             RateSyncLog.switching.info(
                 "[AM CurrentTrackRate] replacing stale same-track rate \(cachedSampleRate, privacy: .public) with \(effectiveRate, privacy: .public)"
             )
+        }
+        if let matched = trackDeviceMatch[expectedTrack],
+           matched.sourceSampleRate != effectiveRate,
+           matched.sampleRate != effectiveRate {
+            trackDeviceMatch.removeValue(forKey: expectedTrack)
         }
         let atmosphere = appleMusicFormatEvidence.flatMap { stat -> CMPlayerStats? in
             guard AppleMusicFormatPolicy.canOverrideConfirmedTrackRate(
@@ -869,7 +963,9 @@ class OutputDevices: ObservableObject {
             scheduledGeneration: appleMusicAtmosProbeScheduledGeneration,
             completedGeneration: appleMusicAtmosProbeCompletedGeneration,
             lastCompletedAt: appleMusicAtmosProbeLastCompletedAt,
-            now: Date()
+            now: Date(),
+            trackStartedAt: currentTrackRequeryStartedAt ?? currentTrackStartedAt,
+            sampleRateState: appleMusicSampleRateState
         ) else { return }
         appleMusicAtmosProbeScheduledGeneration = generation
         let logThreshold = lastTrackChangeDate
@@ -1438,48 +1534,54 @@ class OutputDevices: ObservableObject {
             } ?? .infinity
             let rateDiffersFromDevice = defaultDevice?.nominalSampleRate != sampleRate
             if rateDiffersFromDevice {
-                let now = Date()
-                let candidate = RateGateDecisionPolicy.updateCandidate(
-                    current: pendingCandidate,
-                    rate: sampleRate,
-                    generation: generation,
-                    now: now
-                )
-                pendingCandidate = candidate
+                let alreadyConfirmedForTrack = currentTrack.map { track in
+                    trackAndSample[track] == sampleRate
+                        || (sinceTrackChange >= policy.boundary && trackDeviceMatch[track]?.sourceSampleRate == sampleRate)
+                } ?? false
+                if !alreadyConfirmedForTrack {
+                    let now = Date()
+                    let candidate = RateGateDecisionPolicy.updateCandidate(
+                        current: pendingCandidate,
+                        rate: sampleRate,
+                        generation: generation,
+                        now: now
+                    )
+                    pendingCandidate = candidate
 
-                let isLocked = currentTrack.flatMap { trackAndSample[$0] } != nil
-                let requiredPersistence = RateGateDecisionPolicy.requiredPersistence(
-                    isLocked: isLocked,
-                    policy: policy
-                )
-                let boundarySatisfied = RateGateDecisionPolicy.isBoundarySatisfied(
-                    sinceTrackChange: sinceTrackChange,
-                    policy: policy
-                )
-                let stabilitySatisfied = RateGateDecisionPolicy.isStabilitySatisfied(
-                    candidateFirstSeen: candidate.firstSeen,
-                    now: now,
-                    requiredPersistence: requiredPersistence
-                )
-                let confirmed = boundarySatisfied && stabilitySatisfied
+                    let isLocked = currentTrack.map { isTrackLockedOnDevice($0, device: defaultDevice) } ?? false
+                    let requiredPersistence = RateGateDecisionPolicy.requiredPersistence(
+                        isLocked: isLocked,
+                        policy: policy
+                    )
+                    let boundarySatisfied = RateGateDecisionPolicy.isBoundarySatisfied(
+                        sinceTrackChange: sinceTrackChange,
+                        policy: policy
+                    )
+                    let stabilitySatisfied = RateGateDecisionPolicy.isStabilitySatisfied(
+                        candidateFirstSeen: candidate.firstSeen,
+                        now: now,
+                        requiredPersistence: requiredPersistence
+                    )
+                    let confirmed = boundarySatisfied && stabilitySatisfied
 
-                if !confirmed {
-                    let persistenceElapsed = now.timeIntervalSince(candidate.firstSeen)
-                    if !boundarySatisfied && !stabilitySatisfied {
-                        RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz inside boundary (\(String(format: "%.1f", sinceTrackChange), privacy: .public)/\(String(format: "%.1f", policy.boundary), privacy: .public)s) and awaiting stability (\(String(format: "%.1f", persistenceElapsed), privacy: .public)/\(String(format: "%.1f", requiredPersistence), privacy: .public)s), re-evaluating in 0.5s")
-                    } else if !boundarySatisfied {
-                        RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) != device \(defaultDevice?.nominalSampleRate ?? -1, privacy: .public) Hz inside boundary window (\(String(format: "%.1f", sinceTrackChange), privacy: .public)/\(String(format: "%.1f", policy.boundary), privacy: .public)s), re-evaluating in 0.5s")
-                    } else {
-                        RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz awaiting stability (\(String(format: "%.1f", persistenceElapsed), privacy: .public)/\(String(format: "%.1f", requiredPersistence), privacy: .public)s), re-evaluating in 0.5s")
+                    if !confirmed {
+                        let persistenceElapsed = now.timeIntervalSince(candidate.firstSeen)
+                        if !boundarySatisfied && !stabilitySatisfied {
+                            RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz inside boundary (\(String(format: "%.1f", sinceTrackChange), privacy: .public)/\(String(format: "%.1f", policy.boundary), privacy: .public)s) and awaiting stability (\(String(format: "%.1f", persistenceElapsed), privacy: .public)/\(String(format: "%.1f", requiredPersistence), privacy: .public)s), re-evaluating in 0.5s")
+                        } else if !boundarySatisfied {
+                            RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) != device \(defaultDevice?.nominalSampleRate ?? -1, privacy: .public) Hz inside boundary window (\(String(format: "%.1f", sinceTrackChange), privacy: .public)/\(String(format: "%.1f", policy.boundary), privacy: .public)s), re-evaluating in 0.5s")
+                        } else {
+                            RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz awaiting stability (\(String(format: "%.1f", persistenceElapsed), privacy: .public)/\(String(format: "%.1f", requiredPersistence), privacy: .public)s), re-evaluating in 0.5s")
+                        }
+                        processQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                            guard let self,
+                                  self.isExpectedTrackCurrent(expectedTrack, generation: generation) else { return }
+                            self.switchLatestSampleRate(for: expectedTrack, recursion: true, generation: generation)
+                        }
+                        return
                     }
-                    processQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                        guard let self,
-                              self.isExpectedTrackCurrent(expectedTrack, generation: generation) else { return }
-                        self.switchLatestSampleRate(for: expectedTrack, recursion: true, generation: generation)
-                    }
-                    return
+                    RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz confirmed stable, applying")
                 }
-                RateSyncLog.switching.info("[Gate] candidate \(sampleRate, privacy: .public) Hz confirmed stable, applying")
             }
             pendingCandidate = nil
 
@@ -1506,7 +1608,7 @@ class OutputDevices: ObservableObject {
                 // rates, which would otherwise cause repeated switching.
                 if let currentTrack = currentTrack,
                    let cachedSampleRate = trackAndSample[currentTrack],
-                   defaultDevice.nominalSampleRate == cachedSampleRate,
+                   isTrackLockedOnDevice(currentTrack, device: defaultDevice),
                    cachedSampleRate == sampleRate {
                     let bitDepthChanged = RateSwitchingPolicy.shouldApplyBitDepthChange(
                         isEnabled: enableBitDepthDetection,
@@ -1515,12 +1617,20 @@ class OutputDevices: ObservableObject {
                         selectedBitDepth: Int(suitableFormat.mBitsPerChannel)
                     )
                     if !bitDepthChanged {
+                        self.cacheConfirmedDeviceMatch(
+                            currentTrack,
+                            deviceUID: defaultDevice.uid,
+                            sampleRate: cachedSampleRate,
+                            bitDepth: currentOutputBitDepth ?? trackAndBitDepth[currentTrack],
+                            sourceSampleRate: sampleRate
+                        )
                         RateSyncLog.switching.info("same track, sample rate already applied, skip")
                         return
                     }
                     RateSyncLog.switching.info("same track, bit depth changed, re-applying format")
                 }
-                let sampleRateChanged = suitableFormat.mSampleRate != previousSampleRate
+                let currentDeviceSampleRate = defaultDevice.nominalSampleRate ?? previousSampleRate
+                let sampleRateChanged = suitableFormat.mSampleRate != currentDeviceSampleRate
                 let bitDepthChanged = RateSwitchingPolicy.shouldApplyBitDepthChange(
                     isEnabled: enableBitDepthDetection,
                     reportedBitDepth: first.bitDepth,
@@ -1530,12 +1640,25 @@ class OutputDevices: ObservableObject {
                 let formatChanged = sampleRateChanged || bitDepthChanged
 
                 // An equal-rate result is a NO-OP (device already correct).
-                // Applying-and-caching it would wrongly "settle" the track:
-                // a genuine rate arriving later would then be forced onto
+                // Applying-and-caching it in `trackAndSample` would wrongly "settle" the track's
+                // switching lock: a genuine rate arriving later would then be forced onto
                 // the slow 12 s override tier (observed as ~20 s switching
                 // when the first read is stale data from the previous
-                // track). Leave such tracks uncached instead.
+                // track). Leave `trackAndSample` uncached, and record the confirmed device
+                // match separately so steady-state polling stops after the settling window.
                 if !formatChanged {
+                    if let currentTrack = currentTrack {
+                        let matchedBitDepth = first.bitDepth != nil
+                            ? Int(suitableFormat.mBitsPerChannel)
+                            : currentOutputBitDepth ?? previousBitDepth
+                        self.cacheConfirmedDeviceMatch(
+                            currentTrack,
+                            deviceUID: defaultDevice.uid,
+                            sampleRate: currentDeviceSampleRate ?? suitableFormat.mSampleRate,
+                            bitDepth: matchedBitDepth,
+                            sourceSampleRate: sampleRate
+                        )
+                    }
                     RateSyncLog.switching.info("already at target format, nothing to apply (left uncached)")
                     return
                 }
@@ -1566,6 +1689,12 @@ class OutputDevices: ObservableObject {
                 }
 
                 if !applySucceeded {
+                    if let currentTrack = currentTrack {
+                        self.trackDeviceMatch.removeValue(forKey: currentTrack)
+                        self.trackAndSample.removeValue(forKey: currentTrack)
+                        self.trackAndBitDepth.removeValue(forKey: currentTrack)
+                        self.trackLockedDeviceUID.removeValue(forKey: currentTrack)
+                    }
                     let streams = defaultDevice.streams(scope: .output)
                     let currentStreamFormat = streams?.first?.physicalFormat
                     let fallback = DeviceFormatVerification.fallbackStateOnFailure(
@@ -1576,13 +1705,22 @@ class OutputDevices: ObservableObject {
                         previousBitDepth: previousBitDepth
                     )
                     RateSyncLog.switching.error("Device '\(defaultDevice.name, privacy: .public)' rejected format target=(\(suitableFormat.mSampleRate, privacy: .public) Hz, \(suitableFormat.mBitsPerChannel, privacy: .public) bit) nominal=(\(defaultDevice.nominalSampleRate ?? -1, privacy: .public) Hz)")
-                    self.pendingCandidate = nil
                     if let fallbackRate = fallback.sampleRate {
-                        self.updateSampleRate(fallbackRate, bitDepth: fallback.bitDepth, runUserScript: false)
+                        self.updateSampleRate(
+                            fallbackRate,
+                            bitDepth: fallback.bitDepth,
+                            runUserScript: false,
+                            preserveCandidate: true
+                        )
                     } else {
                         self.previousSampleRate = nil
                         self.previousBitDepth = fallback.bitDepth
                     }
+                    self.pendingCandidate = RateGateDecisionPolicy.CandidateTracking(
+                        rate: suitableFormat.mSampleRate,
+                        generation: generation,
+                        firstSeen: Date()
+                    )
                     return
                 }
 
@@ -1591,7 +1729,13 @@ class OutputDevices: ObservableObject {
                     : currentOutputBitDepth ?? previousBitDepth
                 self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: appliedBitDepth, runUserScript: formatChanged)
                 if let currentTrack = currentTrack {
-                    self.cacheTrackResult(currentTrack, sampleRate: suitableFormat.mSampleRate, bitDepth: appliedBitDepth)
+                    self.cacheTrackResult(
+                        currentTrack,
+                        deviceUID: defaultDevice.uid,
+                        sampleRate: suitableFormat.mSampleRate,
+                        bitDepth: appliedBitDepth,
+                        sourceSampleRate: sampleRate
+                    )
                 }
             }
         }
@@ -1612,9 +1756,23 @@ class OutputDevices: ObservableObject {
     /// Only `currentTrack` is ever read back, but entries survive until the
     /// next track change, so an unbounded table would retain one entry per
     /// distinct track ever played in a long-running menu bar process.
-    private func cacheTrackResult(_ track: MediaTrack, sampleRate: Float64, bitDepth: Int?) {
+    private func cacheTrackResult(
+        _ track: MediaTrack,
+        deviceUID: String? = nil,
+        sampleRate: Float64,
+        bitDepth: Int?,
+        sourceSampleRate: Float64? = nil
+    ) {
         self.trackAndSample[track] = sampleRate
         self.trackAndBitDepth[track] = bitDepth
+        self.trackLockedDeviceUID[track] = deviceUID
+        self.cacheConfirmedDeviceMatch(
+            track,
+            deviceUID: deviceUID,
+            sampleRate: sampleRate,
+            bitDepth: bitDepth,
+            sourceSampleRate: sourceSampleRate ?? sampleRate
+        )
         // Dictionary ordering is unspecified, so this trims arbitrary
         // victims rather than a true LRU - the cap is the safety net, and
         // trackDidChange already removes entries as tracks move on.
@@ -1623,6 +1781,28 @@ class OutputDevices: ObservableObject {
                     ?? self.trackAndSample.keys.first else { break }
             self.trackAndSample.removeValue(forKey: victim)
             self.trackAndBitDepth.removeValue(forKey: victim)
+            self.trackLockedDeviceUID.removeValue(forKey: victim)
+            self.trackDeviceMatch.removeValue(forKey: victim)
+        }
+    }
+
+    private func cacheConfirmedDeviceMatch(
+        _ track: MediaTrack,
+        deviceUID: String?,
+        sampleRate: Float64,
+        bitDepth: Int?,
+        sourceSampleRate: Float64?
+    ) {
+        self.trackDeviceMatch[track] = SteadyStatePollingPolicy.ConfirmedDeviceMatch(
+            deviceUID: deviceUID,
+            sampleRate: sampleRate,
+            bitDepth: bitDepth,
+            sourceSampleRate: sourceSampleRate
+        )
+        while self.trackDeviceMatch.count > Self.maxCachedTracks {
+            guard let victim = self.trackDeviceMatch.keys.first(where: { $0 != self.currentTrack })
+                    ?? self.trackDeviceMatch.keys.first else { break }
+            self.trackDeviceMatch.removeValue(forKey: victim)
         }
     }
 
@@ -1641,9 +1821,16 @@ class OutputDevices: ObservableObject {
         }
     }
     
-    func updateSampleRate(_ sampleRate: Float64, bitDepth: Int?, runUserScript: Bool = true) {
+    func updateSampleRate(
+        _ sampleRate: Float64,
+        bitDepth: Int?,
+        runUserScript: Bool = true,
+        preserveCandidate: Bool = false
+    ) {
         self.previousSampleRate = sampleRate
-        self.pendingCandidate = nil
+        if !preserveCandidate {
+            self.pendingCandidate = nil
+        }
         self.previousBitDepth = bitDepth
         RateSyncWidgetConfiguration.saveAudioFormat(sampleRate: sampleRate, bitDepth: bitDepth)
         reloadWidgetTimeline(reason: "RateSync applied format")
@@ -1759,6 +1946,8 @@ class OutputDevices: ObservableObject {
             guard let self, let track = self.currentTrack, Defaults.shared.userPreferBitDepthDetection else { return }
             self.trackAndSample.removeValue(forKey: track)
             self.trackAndBitDepth.removeValue(forKey: track)
+            self.trackLockedDeviceUID.removeValue(forKey: track)
+            self.trackDeviceMatch.removeValue(forKey: track)
             self.previousSampleRate = nil
             self.previousBitDepth = nil
             self.pendingCandidate = nil
@@ -1767,12 +1956,50 @@ class OutputDevices: ObservableObject {
     }
 
     func trackDidChange(_ newTrack: TrackInfo, eventDate: Date? = nil) {
+        let queued = QueuedTrackEvent(track: newTrack, eventDate: eventDate)
+        guard pendingTrackChangeCoalescer.enqueue(
+            queued,
+            merge: { existing, new in
+                let isSameTrack = MediaTrack(trackInfo: existing.track) == MediaTrack(trackInfo: new.track)
+                let resumed = isSameTrack && (
+                    existing.hasResumedFromPause ||
+                    (existing.track.payload.isPlaying == false && new.track.payload.isPlaying != false)
+                )
+                return QueuedTrackEvent(
+                    track: new.track,
+                    eventDate: new.eventDate,
+                    hasResumedFromPause: resumed
+                )
+            }
+        ) else {
+            return
+        }
         processQueue.async { [weak self] in
-            self?.handleTrackDidChange(newTrack, eventDate: eventDate)
+            self?.drainPendingTrackChanges()
         }
     }
 
-    private func handleTrackDidChange(_ newTrack: TrackInfo, eventDate: Date?) {
+    private func drainPendingTrackChanges() {
+        while let action = pendingTrackChangeCoalescer.takeNextAction() {
+            autoreleasepool {
+                switch action {
+                case .event(let next):
+                    handleTrackDidChange(next.track, eventDate: next.eventDate, hasResumedFromPause: next.hasResumedFromPause)
+                case .clear:
+                    handleClearNowPlayingTrack()
+                case .clearThenEvent(let next):
+                    handleClearNowPlayingTrack()
+                    handleTrackDidChange(next.track, eventDate: next.eventDate, hasResumedFromPause: next.hasResumedFromPause)
+                case .resetArbitration:
+                    break
+                case .resetArbitrationThenEvent(let next):
+                    handleTrackDidChange(next.track, eventDate: next.eventDate, hasResumedFromPause: next.hasResumedFromPause)
+                }
+            }
+        }
+    }
+
+    private func handleTrackDidChange(_ newTrack: TrackInfo, eventDate: Date?, hasResumedFromPause: Bool = false) {
         pendingNowPlayingClear?.cancel()
         pendingNowPlayingClear = nil
         self.previousTrack = self.currentTrack
@@ -1808,10 +2035,14 @@ class OutputDevices: ObservableObject {
             if let currentTrack = currentTrack {
                 self.trackAndSample.removeValue(forKey: currentTrack)
                 self.trackAndBitDepth.removeValue(forKey: currentTrack)
+                self.trackLockedDeviceUID.removeValue(forKey: currentTrack)
+                self.trackDeviceMatch.removeValue(forKey: currentTrack)
             }
             if let previousTrack = previousTrack {
                 self.trackAndSample.removeValue(forKey: previousTrack)
                 self.trackAndBitDepth.removeValue(forKey: previousTrack)
+                self.trackLockedDeviceUID.removeValue(forKey: previousTrack)
+                self.trackDeviceMatch.removeValue(forKey: previousTrack)
             }
             // Decoder log entries are timestamped when the new track starts decoding,
             // which can be slightly before the MediaRemote event arrives. Use the event
@@ -1819,6 +2050,7 @@ class OutputDevices: ObservableObject {
             // while stale logs from the previous track are discarded.
             let trackStartedAt = eventDate ?? Date()
             self.currentTrackStartedAt = trackStartedAt
+            self.currentTrackRequeryStartedAt = trackStartedAt
             self.lastTrackChangeDate = trackStartedAt.addingTimeInterval(-0.5)
             self.appleMusicSampleRateState = isAppleMusicSource ? .waiting : .inactive
             self.appleMusicSampleRateWaitStartedAt = isAppleMusicSource ? trackStartedAt : nil
@@ -1830,6 +2062,7 @@ class OutputDevices: ObservableObject {
             self.appleMusicAtmosProbeLastCompletedAt = nil
             self.appleMusicResumeRetryWorkItem?.cancel()
             self.appleMusicResumeRetryWorkItem = nil
+            self.appleMusicResumeCheckAttempts = 0
             self.appleMusicRecoveryWorkItem?.cancel()
             self.appleMusicRecoveryWorkItem = nil
             self.appleMusicRecoveryAttempts = 0
@@ -1845,6 +2078,53 @@ class OutputDevices: ObservableObject {
             // The dedupe is intentionally NOT reset here: tracks mapping to
             // the same preset must not re-open the EQ window.
             self.scheduleAppleMusicEQUpdate()
+        } else if isAppleMusicSource {
+            self.appleMusic.invalidatePlaybackStateCache()
+            let isPlaying = newTrack.payload.isPlaying
+            if isPlaying == false {
+                self.appleMusicSampleRateState = .notPlaying
+                self.appleMusicSampleRateWaitStartedAt = nil
+                self.appleMusicResumeRetryWorkItem?.cancel()
+                self.appleMusicResumeRetryWorkItem = nil
+                self.appleMusicResumeCheckAttempts = 0
+                return
+            } else {
+                let wasNotPlaying = (self.appleMusicSampleRateState == .notPlaying)
+                self.appleMusicResumeRetryWorkItem?.cancel()
+                self.appleMusicResumeRetryWorkItem = nil
+                self.appleMusicResumeCheckAttempts = 0
+                if wasNotPlaying || hasResumedFromPause {
+                    let resumedAt = eventDate ?? Date()
+                    self.currentTrackStartedAt = resumedAt
+                    self.currentTrackRequeryStartedAt = resumedAt
+                    self.appleMusicSampleRateState = .waiting
+                    self.appleMusicSampleRateWaitStartedAt = resumedAt
+                    self.appleMusicSampleRateLastQueriedAt = nil
+                    self.appleMusicAtmosProbeCompletedGeneration = nil
+                    self.appleMusicAtmosProbeLastCompletedAt = nil
+                    if let currentTrack = self.currentTrack {
+                        self.trackAndSample.removeValue(forKey: currentTrack)
+                        self.trackAndBitDepth.removeValue(forKey: currentTrack)
+                        self.trackLockedDeviceUID.removeValue(forKey: currentTrack)
+                        self.trackDeviceMatch.removeValue(forKey: currentTrack)
+                    }
+                    self.pendingCandidate = nil
+                    self.renewTimer()
+                } else {
+                    let eventTime = eventDate ?? Date()
+                    self.currentTrackRequeryStartedAt = eventTime
+                    self.appleMusicSampleRateState = .waiting
+                    self.appleMusicSampleRateWaitStartedAt = eventTime
+                    self.appleMusicSampleRateLastQueriedAt = nil
+                    self.appleMusicAtmosProbeCompletedGeneration = nil
+                    self.appleMusicAtmosProbeLastCompletedAt = nil
+                    if let currentTrack = self.currentTrack {
+                        self.trackDeviceMatch.removeValue(forKey: currentTrack)
+                    }
+                    self.pendingCandidate = nil
+                    self.renewTimer()
+                }
+            }
         }
         // Snapshot the track this task was scheduled for, so the stale-task guard
         // in switchLatestSampleRate can discard it if the track changes first.
@@ -1853,51 +2133,61 @@ class OutputDevices: ObservableObject {
     }
 
     func clearNowPlayingTrack() {
-        processQueue.async { [weak self] in
-            guard let self else { return }
-            self.currentTrackGeneration &+= 1
-            self.appleMusic.invalidatePlaybackStateCache()
-            self.appleMusicSampleRateState = .inactive
-            self.appleMusicSampleRateWaitStartedAt = nil
-            self.appleMusicSampleRateLastQueriedAt = nil
-            self.appleMusicSampleRateQueryID &+= 1
-            self.appleMusicLastKnownCurrentTrackSampleRate = nil
-            self.appleMusicAtmosProbeScheduledGeneration = nil
-            self.appleMusicAtmosProbeCompletedGeneration = nil
-            self.appleMusicAtmosProbeLastCompletedAt = nil
-            self.appleMusicResumeRetryWorkItem?.cancel()
-            self.appleMusicResumeRetryWorkItem = nil
-            self.appleMusicRecoveryWorkItem?.cancel()
-            self.appleMusicRecoveryWorkItem = nil
-            self.appleMusicRecoveryAttempts = 0
-            self.pendingNowPlayingClear?.cancel()
-            self.pendingNowPlayingClear = nil
-            self.currentTrack = nil
-            self.previousTrack = nil
-            self.trackAndSample.removeAll()
-            self.trackAndBitDepth.removeAll()
-            self.logStatsCache.removeAll()
-            self.appleMusicFormatEvidence = nil
-            self.appleMusicDecoderFormatEvidence = nil
-            self.appleMusicFallbackFormat = nil
-            self.appleMusicFallbackAttemptedForTrack = false
-            self.currentTrackStartedAt = nil
-            self.lastTrackChangeDate = nil
-            self.pendingCandidate = nil
-            self.timerCancellable?.cancel()
-            self.timerCancellable = nil
-            self.timerCalls = 0
-            let clearWork = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.pendingNowPlayingClear = nil
-                RateSyncWidgetConfiguration.clearNowPlayingTrack()
-                self.reloadWidgetTimeline(reason: "now playing stopped")
-            }
-            self.pendingNowPlayingClear = clearWork
-            self.processQueue.asyncAfter(
-                deadline: .now() + Self.nowPlayingClearGracePeriod,
-                execute: clearWork
-            )
+        guard pendingTrackChangeCoalescer.enqueueClear() else {
+            return
         }
+        processQueue.async { [weak self] in
+            self?.drainPendingTrackChanges()
+        }
+    }
+
+    private func handleClearNowPlayingTrack() {
+        self.currentTrackGeneration &+= 1
+        self.appleMusic.invalidatePlaybackStateCache()
+        self.appleMusicSampleRateState = .inactive
+        self.appleMusicSampleRateWaitStartedAt = nil
+        self.appleMusicSampleRateLastQueriedAt = nil
+        self.appleMusicSampleRateQueryID &+= 1
+        self.appleMusicLastKnownCurrentTrackSampleRate = nil
+        self.appleMusicAtmosProbeScheduledGeneration = nil
+        self.appleMusicAtmosProbeCompletedGeneration = nil
+        self.appleMusicAtmosProbeLastCompletedAt = nil
+        self.appleMusicResumeRetryWorkItem?.cancel()
+        self.appleMusicResumeRetryWorkItem = nil
+        self.appleMusicResumeCheckAttempts = 0
+        self.appleMusicRecoveryWorkItem?.cancel()
+        self.appleMusicRecoveryWorkItem = nil
+        self.appleMusicRecoveryAttempts = 0
+        self.pendingNowPlayingClear?.cancel()
+        self.pendingNowPlayingClear = nil
+        self.currentTrack = nil
+        self.previousTrack = nil
+        self.trackAndSample.removeAll()
+        self.trackAndBitDepth.removeAll()
+        self.trackLockedDeviceUID.removeAll()
+        self.trackDeviceMatch.removeAll()
+        self.logStatsCache.removeAll()
+        self.appleMusicFormatEvidence = nil
+        self.appleMusicDecoderFormatEvidence = nil
+        self.appleMusicFallbackFormat = nil
+        self.appleMusicFallbackAttemptedForTrack = false
+        self.currentTrackStartedAt = nil
+        self.currentTrackRequeryStartedAt = nil
+        self.lastTrackChangeDate = nil
+        self.pendingCandidate = nil
+        self.timerCancellable?.cancel()
+        self.timerCancellable = nil
+        self.timerCalls = 0
+        let clearWork = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingNowPlayingClear = nil
+            RateSyncWidgetConfiguration.clearNowPlayingTrack()
+            self.reloadWidgetTimeline(reason: "now playing stopped")
+        }
+        self.pendingNowPlayingClear = clearWork
+        self.processQueue.asyncAfter(
+            deadline: .now() + Self.nowPlayingClearGracePeriod,
+            execute: clearWork
+        )
     }
 }

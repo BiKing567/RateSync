@@ -26,20 +26,34 @@ class Console {
 
     static func getRecentEntries(types: [EntryType], process: String, durationSeconds: TimeInterval) throws -> [SimpleConsole] {
         var messages = [SimpleConsole]()
-        let store = try OSLogStore.local()
-        let duration = store.position(timeIntervalSinceEnd: -durationSeconds)
-        let subsystems = types.map(\.rawValue)
-        let predicate = NSPredicate(format: "(subsystem IN %@) AND (process = %@)", argumentArray: [subsystems, process])
-        let entries = try store.getEntries(with: [], at: duration, matching: predicate)
-        for entry in entries {
-            if let logEntry = entry as? OSLogEntryLog {
-                if !isTrustedLogEntry(logEntry, expectedProcess: process) {
-                    RateSyncLog.switching.info("[LogVerify] dropped untrusted entry pid=\(logEntry.processIdentifier, privacy: .public) process=\(logEntry.process, privacy: .public)")
-                    continue
+        try autoreleasepool {
+            let store = try OSLogStore.local()
+            let duration = store.position(timeIntervalSinceEnd: -durationSeconds)
+            let subsystems = types.map(\.rawValue)
+            let predicate = NSPredicate(format: "(subsystem IN %@) AND (process = %@)", argumentArray: [subsystems, process])
+            let entries = try store.getEntries(with: [], at: duration, matching: predicate)
+            var trustedPIDCache = [pid_t: Bool]()
+            for entry in entries {
+                autoreleasepool {
+                    if let logEntry = entry as? OSLogEntryLog {
+                        let pid = logEntry.processIdentifier
+                        let isTrusted: Bool
+                        if let cached = trustedPIDCache[pid] {
+                            isTrusted = cached
+                        } else {
+                            let verified = isTrustedLogEntry(logEntry, expectedProcess: process)
+                            trustedPIDCache[pid] = verified
+                            isTrusted = verified
+                        }
+                        if !isTrusted {
+                            RateSyncLog.switching.info("[LogVerify] dropped untrusted entry pid=\(pid, privacy: .public) process=\(logEntry.process, privacy: .public)")
+                            return
+                        }
+                    }
+                    let consoleMessage = SimpleConsole(date: entry.date, message: entry.composedMessage)
+                    messages.append(consoleMessage)
                 }
             }
-            let consoleMessage = SimpleConsole(date: entry.date, message: entry.composedMessage)
-            messages.append(consoleMessage)
         }
         return messages.reversed()
     }
