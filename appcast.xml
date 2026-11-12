@@ -6,6 +6,31 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.11 (构建 47)</title>
+            <pubDate>Thu, 12 Nov 2026 10:56:37 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.11 改进 Spotify 及非 Apple Music 播放器的独立位深检测与格式证据缓存仲裁：</p>
+                <p>RateSync 3.2.11 improves independent bit-depth detection and format-evidence caching/arbitration for Spotify and other non-Apple Music players:</p>
+                <h4>新功能与修复 / Improvements and Fixes</h4>
+                <ul>
+                    <li>独立解析并合并位深与采样率字段：Spotify 在保留 44.1 kHz 采样率预设的同时独立检测源位深，支持将仅返回位深的 MediaRemote 报告与预设采样率合并；缺少可用位深时保持输出设备当前位深，同时在无 PID 场景下按 Bundle ID 校验播放器归属。</li>
+                    <li>过滤浮点 LPCM 干扰：<code>AudioConverter</code> 日志解析仅检查源格式段，排除含 <code>float</code> 描述与 <code>kLinearPCMFormatFlagIsFloat</code> 标志的浮点 PCM，避免将 32 位浮点混音格式误判为曲目位深。</li>
+                    <li>按播放窗口限制重试并稳定缓存仲裁：以有限重试预算替代永久静音探测黑名单，切歌或暂停恢复后重置预算，暂停期间停止重复查询；按来源优先级与时间戳仲裁位深缓存（播放器报告优先于解码日志），并在冷却期与单次空探测时保留本窗口上次有效采样率，避免候选抖动或回退。</li>
+                    <li>更换输出设备保留同曲目证据：切换 DAC 时仅重置新设备的探测预算，保留同曲目已确认的源采样率与位深证据。</li>
+                    <li>Independent bit-depth resolution &amp; field merging: keep Spotify's 44.1 kHz sample rate preset while independently detecting source bit depth (merging bit-depth-only MediaRemote reports with the preset rate, keeping current device bit depth when unknown, and validating active bundle IDs when PID is unavailable).</li>
+                    <li>Ignore floating-point LPCM mix formats: restrict <code>AudioConverter</code> log inspection to the source segment and reject floating-point LPCM via both <code>float</code> wording and <code>kLinearPCMFormatFlagIsFloat</code> so 32-bit float processing formats are not treated as track bit depth.</li>
+                    <li>Bounded per-window retries &amp; stable evidence arbitration: replace permanent silent-probe app exclusion with a bounded per-window budget that resets on track changes and pause-resume while staying idle during pause; arbitrate cached bit depth by source priority and timestamp, and retain the last valid sample rate across probe cooldowns and empty probes.</li>
+                    <li>Preserve same-track evidence across DAC changes: reset only the new device's probe retry budget on output device switches while keeping verified track sample rate and bit-depth evidence intact.</li>
+                </ul>
+                <p>如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！</p>
+                <p>If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.11">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.11</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.11/RateSync-3.2.11.dmg" sparkle:version="47" sparkle:shortVersionString="3.2.11" sparkle:edSignature="nnzXYJBhkypHXilVdCRkm7H98g2XQxKrYYo85HczLSZxWoGjhh3N4zivHApR2T+Muh2alAYxDeDUG2ckxgMoBg==" length="4958544" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.10 (构建 46)</title>
             <pubDate>Wed, 11 Nov 2026 10:45:54 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

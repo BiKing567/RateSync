@@ -112,6 +112,244 @@ enum RateSwitchingPolicy {
     }
 }
 
+/// Validates and merges independent sample-rate and bit-depth signals for
+/// non-Apple-Music players (such as Spotify's 44.1 kHz preset paired with
+/// per-track bit-depth detection).
+enum TrackFormatResolutionPolicy {
+    struct BitDepthEvidence: Equatable {
+        enum Source: Int, Comparable, Equatable {
+            case sourceFormatLog = 1
+            case mediaRemoteReport = 2
+
+            static func < (lhs: Source, rhs: Source) -> Bool {
+                lhs.rawValue < rhs.rawValue
+            }
+        }
+
+        let bitDepth: Int
+        let source: Source
+        let date: Date
+    }
+
+    struct NonAppleMusicResolution {
+        let stats: [CMPlayerStats]
+        let source: RateSource
+        let resolvedBitDepthEvidence: BitDepthEvidence?
+
+        var resolvedBitDepth: Int? {
+            resolvedBitDepthEvidence?.bitDepth
+        }
+    }
+
+    static func validSampleRate(_ sampleRate: Double?) -> Double? {
+        guard let sampleRate,
+              sampleRate.isFinite,
+              sampleRate > 0,
+              sampleRate <= RateSwitchingPolicy.maxPlausibleSampleRate else {
+            return nil
+        }
+        return sampleRate
+    }
+
+    static func validBitDepth(_ bitDepth: Int?) -> Int? {
+        guard let bitDepth,
+              bitDepth > 0,
+              bitDepth <= RateSwitchingPolicy.maxPlausibleBitDepth else {
+            return nil
+        }
+        return bitDepth
+    }
+
+    static func shouldPreferBitDepthEvidence(
+        _ candidate: BitDepthEvidence,
+        over existing: BitDepthEvidence?
+    ) -> Bool {
+        guard let existing else { return true }
+        if candidate.source != existing.source {
+            return candidate.source > existing.source
+        }
+        return candidate.date >= existing.date
+    }
+
+    static func resolveNonAppleMusic(
+        mediaRemoteSampleRate: Double?,
+        mediaRemoteBitDepth: Int?,
+        logStats: [CMPlayerStats],
+        cachedSampleRate: Double? = nil,
+        cachedBitDepthEvidence: BitDepthEvidence? = nil,
+        presetSampleRate: Double?,
+        audioQueueSource: RateSource,
+        defaultLogSource: RateSource,
+        enableBitDepthDetection: Bool = true,
+        now: Date = Date()
+    ) -> NonAppleMusicResolution {
+        let probeRate = validSampleRate(mediaRemoteSampleRate) ?? validSampleRate(cachedSampleRate)
+        let probeDepth = validBitDepth(mediaRemoteBitDepth)
+        let probeEvidence = probeDepth.map {
+            BitDepthEvidence(bitDepth: $0, source: .mediaRemoteReport, date: now)
+        }
+        let liveLogEvidence = logStats
+            .compactMap { stat -> BitDepthEvidence? in
+                guard let bitDepth = validBitDepth(stat.bitDepth) else { return nil }
+                return BitDepthEvidence(bitDepth: bitDepth, source: .sourceFormatLog, date: stat.date)
+            }
+            .max(by: { $0.date < $1.date })
+
+        var bestBitDepth = enableBitDepthDetection
+            ? cachedBitDepthEvidence.flatMap { validBitDepth($0.bitDepth) != nil ? $0 : nil }
+            : nil
+        if let liveLogEvidence, shouldPreferBitDepthEvidence(liveLogEvidence, over: bestBitDepth) {
+            bestBitDepth = liveLogEvidence
+        }
+        if let probeEvidence, shouldPreferBitDepthEvidence(probeEvidence, over: bestBitDepth) {
+            bestBitDepth = probeEvidence
+        }
+        let mergedBitDepth = enableBitDepthDetection ? bestBitDepth?.bitDepth : probeDepth
+
+        if let probeRate {
+            let stat = CMPlayerStats(sampleRate: probeRate, bitDepth: mergedBitDepth, date: now)
+            return NonAppleMusicResolution(
+                stats: [stat],
+                source: .mediaRemoteProbe,
+                resolvedBitDepthEvidence: bestBitDepth
+            )
+        }
+
+        if let presetRate = validSampleRate(presetSampleRate) {
+            let source: RateSource
+            if enableBitDepthDetection, bestBitDepth?.source == .mediaRemoteReport {
+                source = .mediaRemoteProbe
+            } else if enableBitDepthDetection, liveLogEvidence != nil {
+                source = audioQueueSource
+            } else if !enableBitDepthDetection, probeDepth != nil {
+                source = .mediaRemoteProbe
+            } else {
+                source = .preset
+            }
+            let stat = CMPlayerStats(sampleRate: presetRate, bitDepth: mergedBitDepth, date: now)
+            return NonAppleMusicResolution(
+                stats: [stat],
+                source: source,
+                resolvedBitDepthEvidence: bestBitDepth
+            )
+        }
+
+        if let first = logStats.first,
+           let logRate = validSampleRate(first.sampleRate) {
+            var mergedStats = logStats
+            mergedStats[0] = CMPlayerStats(
+                sampleRate: logRate,
+                bitDepth: mergedBitDepth,
+                date: first.date,
+                isAppleMusicFormat: first.isAppleMusicFormat,
+                isDolbyAtmos: first.isDolbyAtmos,
+                isSpatialAudio: first.isSpatialAudio,
+                trackIdentifier: first.trackIdentifier
+            )
+            let source: RateSource = (enableBitDepthDetection && bestBitDepth?.source == .mediaRemoteReport)
+                || (!enableBitDepthDetection && probeDepth != nil)
+                ? .mediaRemoteProbe
+                : defaultLogSource
+            return NonAppleMusicResolution(
+                stats: mergedStats,
+                source: source,
+                resolvedBitDepthEvidence: bestBitDepth
+            )
+        }
+
+        return NonAppleMusicResolution(
+            stats: [],
+            source: defaultLogSource,
+            resolvedBitDepthEvidence: bestBitDepth
+        )
+    }
+}
+
+/// Bounds MediaRemote and OSLog format probing per track or playback-resume
+/// window so missing fields do not permanently blacklist an app across tracks,
+/// while avoiding unbounded polling and OSLog queries when bit depth is unknown.
+struct FormatProbeBudget: Equatable {
+    static let maxMediaRemoteMissesPerWindow = 2
+    static let maxLogProbesWithoutBitDepthPerWindow = 3
+    static let probeCooldown: TimeInterval = 1.5
+
+    private(set) var mediaRemoteMisses: Int = 0
+    private(set) var lastMediaRemoteProbeAt: Date?
+    private(set) var logProbesWithoutBitDepth: Int = 0
+    private(set) var lastLogProbeAt: Date?
+    private(set) var isPaused: Bool = false
+
+    mutating func resetForNewWindow() {
+        mediaRemoteMisses = 0
+        lastMediaRemoteProbeAt = nil
+        logProbesWithoutBitDepth = 0
+        lastLogProbeAt = nil
+        isPaused = false
+    }
+
+    mutating func setPaused(_ paused: Bool) {
+        if paused {
+            isPaused = true
+        } else if isPaused {
+            resetForNewWindow()
+        }
+    }
+
+    func shouldProbeMediaRemote(now: Date, ignoreCooldown: Bool = false) -> Bool {
+        guard !isPaused else { return false }
+        guard mediaRemoteMisses < Self.maxMediaRemoteMissesPerWindow else { return false }
+        if !ignoreCooldown,
+           let lastMediaRemoteProbeAt,
+           now.timeIntervalSince(lastMediaRemoteProbeAt) < Self.probeCooldown {
+            return false
+        }
+        return true
+    }
+
+    mutating func recordMediaRemoteAttempt(hasSampleRate: Bool, hasBitDepth: Bool, now: Date) {
+        lastMediaRemoteProbeAt = now
+        if hasSampleRate || hasBitDepth {
+            mediaRemoteMisses = 0
+        } else {
+            mediaRemoteMisses += 1
+        }
+    }
+
+    func shouldProbeLogs(
+        hasPresetSampleRate: Bool,
+        hasMediaRemoteBitDepth: Bool,
+        enableBitDepthDetection: Bool,
+        now: Date,
+        ignoreCooldown: Bool = false
+    ) -> Bool {
+        guard !isPaused else { return false }
+        guard hasPresetSampleRate else {
+            return true
+        }
+        guard enableBitDepthDetection, !hasMediaRemoteBitDepth else {
+            return false
+        }
+        guard logProbesWithoutBitDepth < Self.maxLogProbesWithoutBitDepthPerWindow else {
+            return false
+        }
+        if !ignoreCooldown,
+           let lastLogProbeAt,
+           now.timeIntervalSince(lastLogProbeAt) < Self.probeCooldown {
+            return false
+        }
+        return true
+    }
+
+    mutating func recordLogAttempt(foundBitDepth: Bool, now: Date) {
+        lastLogProbeAt = now
+        if foundBitDepth {
+            logProbesWithoutBitDepth = 0
+        } else {
+            logProbesWithoutBitDepth += 1
+        }
+    }
+}
+
 enum AppleMusicSampleRateQueryResult: Equatable {
     case sampleRate(Double)
     case missingValue
@@ -384,10 +622,11 @@ enum SteadyStatePollingPolicy {
         hasPendingCandidate: Bool,
         appleMusicState: AppleMusicSampleRateState,
         trackStartedAt: Date?,
-        now: Date
+        now: Date,
+        isPlaybackPaused: Bool = false
     ) -> Bool {
         guard hasCurrentTrack else { return false }
-        if appleMusicState == .notPlaying {
+        if isPlaybackPaused || appleMusicState == .notPlaying {
             return false
         }
         let settledOnDevice = isDeviceMatched ?? isTrackLocked

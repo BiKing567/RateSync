@@ -206,41 +206,47 @@ class CMPlayerParser {
             // 1. Decoded LPCM source evidence from AudioConverter:
             // "AudioConverter from  2 ch,  96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 48000 Hz, Float32"
             // or "from  2 ch,  96000 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to ..."
-            if rawMessage.contains("lpcm") && rawMessage.contains("from ") && rawMessage.contains(" Hz") {
-                var sampleRate: Double?
-                var bitDepth: Int?
-                var targetRate: Double?
+            // Inspect only the source segment ("from " ..< " to ") for "lpcm" and "-bit" so
+            // output-side LPCM formats (e.g. Float32 -> lpcm 24-bit/32-bit) are never mistaken for source depth.
+            if let fromRange = rawMessage.range(of: "from "),
+               let hzRange = rawMessage.range(of: " Hz", range: fromRange.upperBound..<rawMessage.endIndex) {
+                let toRange = rawMessage.range(of: " to ", range: fromRange.upperBound..<rawMessage.endIndex)
+                let sourceEnd = toRange?.lowerBound ?? rawMessage.endIndex
+                let sourceSegment = rawMessage[fromRange.upperBound..<sourceEnd]
+                if sourceSegment.contains("lpcm") {
+                    var sampleRate: Double?
+                    var bitDepth: Int?
+                    var targetRate: Double?
 
-                if let fromRange = rawMessage.range(of: "from "),
-                   let hzRange = rawMessage.range(of: " Hz", range: fromRange.upperBound..<rawMessage.endIndex) {
                     let sub = rawMessage[fromRange.upperBound..<hzRange.lowerBound]
                     if let ratePart = sub.split(separator: ",").last?.trimmingCharacters(in: .whitespaces),
                        let r = Double(ratePart), r > 0 {
                         sampleRate = r
                     }
-                }
 
-                if let lpcmRange = rawMessage.range(of: "lpcm"),
-                   let bitRange = rawMessage.range(of: "-bit", range: lpcmRange.upperBound..<rawMessage.endIndex) {
-                    let sub = rawMessage[lpcmRange.upperBound..<bitRange.lowerBound]
-                    if let depthPart = sub.split(separator: " ").last,
-                       let bd = Int(depthPart), bd > 0 {
-                        bitDepth = bd
+                    if !Self.isFloatingPointLPCM(sourceSegment),
+                       let lpcmRange = sourceSegment.range(of: "lpcm"),
+                       let bitRange = sourceSegment.range(of: "-bit", range: lpcmRange.upperBound..<sourceSegment.endIndex) {
+                        let depthSub = sourceSegment[lpcmRange.upperBound..<bitRange.lowerBound]
+                        if let depthPart = depthSub.split(separator: " ").last,
+                           let bd = Int(depthPart), bd > 0 {
+                            bitDepth = bd
+                        }
                     }
-                }
 
-                if let toRange = rawMessage.range(of: "to "),
-                   let targetHzRange = rawMessage.range(of: " Hz", range: toRange.upperBound..<rawMessage.endIndex) {
-                    let sub = rawMessage[toRange.upperBound..<targetHzRange.lowerBound]
-                    if let ratePart = sub.split(separator: ",").last?.trimmingCharacters(in: .whitespaces),
-                       let tr = Double(ratePart), tr > 0 {
-                        targetRate = tr
+                    if let toRange,
+                       let targetHzRange = rawMessage.range(of: " Hz", range: toRange.upperBound..<rawMessage.endIndex) {
+                        let targetSub = rawMessage[toRange.upperBound..<targetHzRange.lowerBound]
+                        if let ratePart = targetSub.split(separator: ",").last?.trimmingCharacters(in: .whitespaces),
+                           let tr = Double(ratePart), tr > 0 {
+                            targetRate = tr
+                        }
                     }
-                }
 
-                if let sr = sampleRate {
-                    let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth, date: date)
-                    converterEvidences.append((stat: stat, targetRate: targetRate))
+                    if let sr = sampleRate {
+                        let stat = CMPlayerStats(sampleRate: sr, bitDepth: bitDepth, date: date)
+                        converterEvidences.append((stat: stat, targetRate: targetRate))
+                    }
                 }
             }
 
@@ -279,5 +285,24 @@ class CMPlayerParser {
         return combined
     }
 
+    /// Detects floating-point LPCM mix/processing formats (e.g.
+    /// `lpcm (0x00000009) 32-bit little-endian float`) via either textual
+    /// description or CoreAudio `kLinearPCMFormatFlagIsFloat` (bit 0).
+    private static func isFloatingPointLPCM(_ sourceSegment: Substring) -> Bool {
+        if sourceSegment.range(of: "float", options: .caseInsensitive) != nil {
+            return true
+        }
+        if let lpcmRange = sourceSegment.range(of: "lpcm"),
+           let openParen = sourceSegment.range(of: "(", range: lpcmRange.upperBound..<sourceSegment.endIndex),
+           let closeParen = sourceSegment.range(of: ")", range: openParen.upperBound..<sourceSegment.endIndex) {
+            let inside = sourceSegment[openParen.upperBound..<closeParen.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let hexDigits = inside.lowercased().hasPrefix("0x") ? String(inside.dropFirst(2)) : inside
+            if let flags = UInt32(hexDigits, radix: 16), (flags & 0x1) != 0 {
+                return true
+            }
+        }
+        return false
+    }
 
 }

@@ -78,7 +78,11 @@ enum MediaRemoteSampleRateProbe {
     ///   this probe. When another app is the currently active player (e.g.
     ///   two players running at once), the Now Playing dict belongs to that
     ///   other app, so the result is discarded to avoid cross-app data.
-    static func fetchAudioFormat(expectedPID: pid_t?, completion: @escaping (Double?, Int?) -> Void) {
+    static func fetchAudioFormat(
+        expectedPID: pid_t?,
+        expectedBundleIdentifier: String? = nil,
+        completion: @escaping (Double?, Int?) -> Void
+    ) {
         guard let getNowPlayingInfo else {
             completion(nil, nil)
             return
@@ -105,7 +109,9 @@ enum MediaRemoteSampleRateProbe {
                     completeOnce.complete((nil, nil))
                     return
                 }
-                completeOnce.complete(((dict[kSampleRate] as? NSNumber)?.doubleValue, (dict[kBitDepth] as? NSNumber)?.intValue))
+                let sampleRate = TrackFormatResolutionPolicy.validSampleRate((dict[kSampleRate] as? NSNumber)?.doubleValue)
+                let bitDepth = TrackFormatResolutionPolicy.validBitDepth((dict[kBitDepth] as? NSNumber)?.intValue)
+                completeOnce.complete((sampleRate, bitDepth))
                 return
             }
             getNowPlayingApplicationPID(queue) { activePID in
@@ -114,8 +120,18 @@ enum MediaRemoteSampleRateProbe {
                     completeOnce.complete((nil, nil))
                     return
                 }
-                let sampleRate = (dict[kSampleRate] as? NSNumber)?.doubleValue
-                let bitDepth = (dict[kBitDepth] as? NSNumber)?.intValue
+                if expectedPID == nil, let expectedBundleIdentifier {
+                    let activeBundleID = activePID > 0
+                        ? NSRunningApplication(processIdentifier: activePID)?.bundleIdentifier
+                        : nil
+                    if activeBundleID != expectedBundleIdentifier {
+                        RateSyncLog.switching.info("[MRProbe] active bundle \(activeBundleID ?? "nil", privacy: .public) != event bundle \(expectedBundleIdentifier, privacy: .public), ignoring")
+                        completeOnce.complete((nil, nil))
+                        return
+                    }
+                }
+                let sampleRate = TrackFormatResolutionPolicy.validSampleRate((dict[kSampleRate] as? NSNumber)?.doubleValue)
+                let bitDepth = TrackFormatResolutionPolicy.validBitDepth((dict[kBitDepth] as? NSNumber)?.intValue)
                 if sampleRate != nil || bitDepth != nil {
                     RateSyncLog.switching.info("[MRProbe] sampleRate=\(sampleRate ?? -1) bitDepth=\(bitDepth ?? -1)")
                 }

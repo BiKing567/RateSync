@@ -3082,4 +3082,543 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertNil(clearAction.event)
     }
 
+    func testSpotifyPresetMergesMediaRemoteBitDepthOnlyInto44100Format() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let resolution = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: 24,
+            logStats: [],
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            enableBitDepthDetection: true,
+            now: now
+        )
+
+        XCTAssertEqual(resolution.source, .mediaRemoteProbe)
+        XCTAssertEqual(resolution.resolvedBitDepth, 24)
+        XCTAssertEqual(resolution.stats.first?.sampleRate, 44_100)
+        XCTAssertEqual(resolution.stats.first?.bitDepth, 24)
+
+        // Device offering both 16-bit and 24-bit at 44.1 kHz selects 24-bit.
+        var format16 = AudioStreamBasicDescription()
+        format16.mSampleRate = 44_100
+        format16.mBitsPerChannel = 16
+        var format24 = AudioStreamBasicDescription()
+        format24.mSampleRate = 44_100
+        format24.mBitsPerChannel = 24
+        let selected24 = AudioFormatSelector.nearestFormat(
+            sampleRate: 44_100,
+            bitDepth: 24,
+            supportedSampleRates: [44_100],
+            formats: [format16, format24],
+            preferSampleRateMultiples: false
+        )
+        XCTAssertEqual(selected24?.mSampleRate, 44_100)
+        XCTAssertEqual(selected24?.mBitsPerChannel, 24)
+
+        // Device offering only 32-bit at 44.1 kHz still selects its supported 32-bit format.
+        var format32 = AudioStreamBasicDescription()
+        format32.mSampleRate = 44_100
+        format32.mBitsPerChannel = 32
+        let selected32Only = AudioFormatSelector.nearestFormat(
+            sampleRate: 44_100,
+            bitDepth: 24,
+            supportedSampleRates: [44_100],
+            formats: [format32],
+            preferSampleRateMultiples: false
+        )
+        XCTAssertEqual(selected32Only?.mSampleRate, 44_100)
+        XCTAssertEqual(selected32Only?.mBitsPerChannel, 32)
+    }
+
+    func testSpotifyPresetPrefersVerifiedMediaRemoteBitDepthOverSourceLogAndIgnoresFloat32() {
+        let now = Date(timeIntervalSince1970: 1_100)
+        let log24 = CMPlayerStats(sampleRate: 44_100, bitDepth: 24, date: now)
+
+        // 1. Player report (16 bit) takes priority over log bit depth (24 bit).
+        let reportWins = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: 16,
+            logStats: [log24],
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: now
+        )
+        XCTAssertEqual(reportWins.source, .mediaRemoteProbe)
+        XCTAssertEqual(reportWins.stats.first?.sampleRate, 44_100)
+        XCTAssertEqual(reportWins.stats.first?.bitDepth, 16)
+
+        // 2. When MediaRemote omits bit depth, source-format LPCM log supplies 24 bit while keeping 44.1 kHz.
+        let logEntries = [
+            SimpleConsole(
+                date: now,
+                message: "AudioConverter from 2 ch, 44100 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 96000 Hz, Float32"
+            )
+        ]
+        let parsedSourceLogs = CMPlayerParser.parseAudioQueueConsoleLogs(logEntries, since: now.addingTimeInterval(-1))
+        let logWins = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: nil,
+            logStats: parsedSourceLogs,
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: now
+        )
+        XCTAssertEqual(logWins.source, .audioQueueLog)
+        XCTAssertEqual(logWins.stats.first?.sampleRate, 44_100)
+        XCTAssertEqual(logWins.stats.first?.bitDepth, 24)
+
+        // 3. Float32 output or destination-side LPCM conversion must never fabricate source bit depth or replace 44.1 kHz.
+        let floatAndDestEntries = [
+            SimpleConsole(
+                date: now,
+                message: "AudioConverter from 2 ch, 44100 Hz, Float32 to 2 ch, 96000 Hz, lpcm (0x0000000c) 32-bit signed integer"
+            ),
+            SimpleConsole(
+                date: now.addingTimeInterval(0.1),
+                message: "AudioQueueObject.cpp:488 New output; format 2 ch, 96000 Hz, Float32, ..."
+            )
+        ]
+        let floatOnlyLogs = CMPlayerParser.parseAudioQueueConsoleLogs(floatAndDestEntries, since: now.addingTimeInterval(-1))
+        XCTAssertEqual(floatOnlyLogs.compactMap(\.bitDepth), [], "Float32 source and destination LPCM must not yield source bit depth.")
+
+        let floatFallback = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: nil,
+            logStats: floatOnlyLogs,
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: now
+        )
+        XCTAssertEqual(floatFallback.source, .preset)
+        XCTAssertEqual(floatFallback.stats.first?.sampleRate, 44_100)
+        XCTAssertNil(floatFallback.stats.first?.bitDepth)
+    }
+
+    func testSpotifySameSampleRateAllowsBitDepthSwitchFrom16To24() {
+        let shouldSwitch = RateSwitchingPolicy.shouldApplyBitDepthChange(
+            isEnabled: true,
+            reportedBitDepth: 24,
+            currentBitDepth: 16,
+            selectedBitDepth: 24
+        )
+        XCTAssertTrue(shouldSwitch, "Changing from 16 bit to 24 bit at 44.1 kHz must be permitted.")
+
+        let stillMatched = SteadyStatePollingPolicy.isDeviceMatched(
+            lockedSampleRate: 44_100,
+            lockedBitDepth: 24,
+            lockedDeviceUID: "dac-1",
+            confirmedMatch: nil,
+            currentDeviceUID: "dac-1",
+            currentDeviceSampleRate: 44_100,
+            currentDeviceBitDepth: 16,
+            enableBitDepthDetection: true
+        )
+        XCTAssertFalse(stillMatched, "A 16-bit device must not count as matched when 24-bit is locked.")
+    }
+
+    func testFormatProbeBudgetUnknownBitDepthStopsAfterFiniteRetriesAndResetsOnTrackChangeOrResume() {
+        var budget = FormatProbeBudget()
+        let t0 = Date(timeIntervalSince1970: 2_000)
+
+        // 1. Receiving bitDepth-only must NOT count as a MediaRemote failure.
+        XCTAssertTrue(budget.shouldProbeMediaRemote(now: t0))
+        budget.recordMediaRemoteAttempt(hasSampleRate: false, hasBitDepth: true, now: t0)
+        XCTAssertEqual(budget.mediaRemoteMisses, 0)
+        XCTAssertTrue(
+            budget.shouldProbeMediaRemote(now: t0.addingTimeInterval(2.0)),
+            "Successful bit-depth-only report must not disable future MediaRemote probes."
+        )
+
+        // 2. Track with unknown bit depth: pauses/cooldown respected, then stops after bounded misses.
+        budget.resetForNewWindow()
+        XCTAssertTrue(budget.shouldProbeMediaRemote(now: t0))
+        budget.recordMediaRemoteAttempt(hasSampleRate: false, hasBitDepth: false, now: t0)
+        XCTAssertTrue(budget.shouldProbeLogs(hasPresetSampleRate: true, hasMediaRemoteBitDepth: false, enableBitDepthDetection: true, now: t0))
+        budget.recordLogAttempt(foundBitDepth: false, now: t0)
+
+        // Cooldown prevents 0.5s gate loops from burning probe budget immediately.
+        XCTAssertFalse(budget.shouldProbeMediaRemote(now: t0.addingTimeInterval(0.5)))
+        XCTAssertFalse(budget.shouldProbeLogs(hasPresetSampleRate: true, hasMediaRemoteBitDepth: false, enableBitDepthDetection: true, now: t0.addingTimeInterval(0.5)))
+
+        // Attempt 2 after cooldown: MediaRemote reaches max misses (2) and stops for this window.
+        let t2 = t0.addingTimeInterval(2.0)
+        XCTAssertTrue(budget.shouldProbeMediaRemote(now: t2))
+        budget.recordMediaRemoteAttempt(hasSampleRate: false, hasBitDepth: false, now: t2)
+        XCTAssertFalse(budget.shouldProbeMediaRemote(now: t2.addingTimeInterval(2.0)), "MediaRemote must stop after bounded misses.")
+
+        // Log probes continue up to Attempt 3, then stop too.
+        XCTAssertTrue(budget.shouldProbeLogs(hasPresetSampleRate: true, hasMediaRemoteBitDepth: false, enableBitDepthDetection: true, now: t2))
+        budget.recordLogAttempt(foundBitDepth: false, now: t2)
+        let t4 = t0.addingTimeInterval(4.0)
+        XCTAssertTrue(budget.shouldProbeLogs(hasPresetSampleRate: true, hasMediaRemoteBitDepth: false, enableBitDepthDetection: true, now: t4))
+        budget.recordLogAttempt(foundBitDepth: false, now: t4)
+        XCTAssertFalse(
+            budget.shouldProbeLogs(hasPresetSampleRate: true, hasMediaRemoteBitDepth: false, enableBitDepthDetection: true, now: t4.addingTimeInterval(2.0)),
+            "Log probing for unknown bit depth must stop after finite attempts."
+        )
+
+        // Unknown bit depth keeps 44.1 kHz target and preserves device bit depth (nil).
+        let unknownResolution = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: nil,
+            logStats: [],
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: t4
+        )
+        XCTAssertEqual(unknownResolution.stats.first?.sampleRate, 44_100)
+        XCTAssertNil(unknownResolution.stats.first?.bitDepth)
+
+        // 3. Pausing stops probes and polling; resuming or switching track restores bounded probing.
+        budget.setPaused(true)
+        XCTAssertFalse(
+            SteadyStatePollingPolicy.shouldPollTrack(
+                hasCurrentTrack: true,
+                isTrackLocked: false,
+                isDeviceMatched: false,
+                hasPendingCandidate: false,
+                appleMusicState: .inactive,
+                trackStartedAt: t0,
+                now: t4,
+                isPlaybackPaused: budget.isPaused
+            )
+        )
+        budget.setPaused(false)
+        XCTAssertTrue(budget.shouldProbeMediaRemote(now: t4.addingTimeInterval(10.0)), "Resuming playback must reset probe budget.")
+        XCTAssertTrue(budget.shouldProbeLogs(hasPresetSampleRate: true, hasMediaRemoteBitDepth: false, enableBitDepthDetection: true, now: t4.addingTimeInterval(10.0)))
+    }
+
+    func testPreviousTrackLogBoundaryDropsStaleBitDepthEvidence() {
+        let trackChangedAt = Date(timeIntervalSince1970: 3_000)
+        let aqBoundary = trackChangedAt.addingTimeInterval(-0.5)
+        let entries = [
+            SimpleConsole(
+                date: trackChangedAt.addingTimeInterval(-1.2),
+                message: "AudioConverter from 2 ch, 44100 Hz, lpcm (0x00000016) 24-bit big-endian signed integer to 2 ch, 44100 Hz, Float32"
+            )
+        ]
+
+        let filtered = CMPlayerParser.parseAudioQueueConsoleLogs(entries, since: aqBoundary)
+            .filter { $0.date >= aqBoundary }
+        XCTAssertTrue(filtered.isEmpty, "Previous track source logs older than the boundary must be discarded.")
+    }
+
+    func testSpotifyBitDepthRejectionRetainsPendingCandidateAndDetectedBitDepthForRetry() {
+        let now = Date(timeIntervalSince1970: 4_000)
+        var targetFormat = AudioStreamBasicDescription()
+        targetFormat.mSampleRate = 44_100
+        targetFormat.mBitsPerChannel = 24
+
+        var rejectedDeviceFormat = AudioStreamBasicDescription()
+        rejectedDeviceFormat.mSampleRate = 44_100
+        rejectedDeviceFormat.mBitsPerChannel = 16
+
+        let applied = DeviceFormatVerification.isPhysicalFormatApplied(
+            targetRate: targetFormat.mSampleRate,
+            targetBitDepth: targetFormat.mBitsPerChannel,
+            streamPhysicalFormat: rejectedDeviceFormat,
+            nominalRate: 44_100
+        )
+        XCTAssertFalse(applied)
+
+        let fallback = DeviceFormatVerification.fallbackStateOnFailure(
+            nominalRate: 44_100,
+            streamPhysicalFormat: rejectedDeviceFormat,
+            currentOutputBitDepth: 16,
+            previousSampleRate: 44_100,
+            previousBitDepth: 16
+        )
+        XCTAssertEqual(fallback.sampleRate, 44_100)
+        XCTAssertEqual(fallback.bitDepth, 16)
+
+        let pendingCandidate = RateGateDecisionPolicy.CandidateTracking(
+            rate: targetFormat.mSampleRate,
+            generation: 1,
+            firstSeen: now
+        )
+        XCTAssertTrue(
+            SteadyStatePollingPolicy.shouldPollTrack(
+                hasCurrentTrack: true,
+                isTrackLocked: false,
+                isDeviceMatched: false,
+                hasPendingCandidate: true,
+                appleMusicState: .inactive,
+                trackStartedAt: now,
+                now: now.addingTimeInterval(20)
+            ),
+            "Rejected 24-bit format must keep pendingCandidate active so polling retries."
+        )
+
+        // Cached bit depth keeps 24-bit target intact on subsequent retry resolution.
+        let retryResolution = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: nil,
+            logStats: [],
+            cachedBitDepthEvidence: TrackFormatResolutionPolicy.BitDepthEvidence(
+                bitDepth: 24,
+                source: .mediaRemoteReport,
+                date: now
+            ),
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: now.addingTimeInterval(3)
+        )
+        XCTAssertEqual(pendingCandidate.rate, 44_100)
+        XCTAssertEqual(retryResolution.stats.first?.sampleRate, 44_100)
+        XCTAssertEqual(retryResolution.stats.first?.bitDepth, 24)
+    }
+
+    func testCooldownPreservesCachedMediaRemoteSampleRateInsteadOfOscillatingToPreset() {
+        var budget = FormatProbeBudget()
+        var cachedSampleRate: Double?
+        var cachedBitDepth: TrackFormatResolutionPolicy.BitDepthEvidence?
+        var pendingCandidate: RateGateDecisionPolicy.CandidateTracking?
+        let t0 = Date(timeIntervalSince1970: 5_000)
+
+        func step(at time: Date, mrSampleRate: Double?, mrBitDepth: Int?) -> Double? {
+            let liveRate: Double?
+            let liveDepth: Int?
+            if budget.shouldProbeMediaRemote(now: time) {
+                liveRate = TrackFormatResolutionPolicy.validSampleRate(mrSampleRate)
+                liveDepth = TrackFormatResolutionPolicy.validBitDepth(mrBitDepth)
+                cachedSampleRate = liveRate
+                budget.recordMediaRemoteAttempt(
+                    hasSampleRate: liveRate != nil,
+                    hasBitDepth: liveDepth != nil,
+                    now: time
+                )
+            } else {
+                liveRate = cachedSampleRate
+                liveDepth = nil
+            }
+            let resolution = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+                mediaRemoteSampleRate: liveRate,
+                mediaRemoteBitDepth: liveDepth,
+                logStats: [],
+                cachedBitDepthEvidence: cachedBitDepth,
+                presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+                audioQueueSource: .audioQueueLog,
+                defaultLogSource: .audioQueueLog,
+                now: time
+            )
+            cachedBitDepth = resolution.resolvedBitDepthEvidence
+            if let rate = resolution.stats.first?.sampleRate {
+                pendingCandidate = RateGateDecisionPolicy.updateCandidate(
+                    current: pendingCandidate,
+                    rate: rate,
+                    generation: 1,
+                    now: time
+                )
+            }
+            return resolution.stats.first?.sampleRate
+        }
+
+        // t = 0.0: MediaRemote reports 96 kHz
+        XCTAssertEqual(step(at: t0, mrSampleRate: 96_000, mrBitDepth: nil), 96_000)
+        XCTAssertEqual(pendingCandidate?.firstSeen, t0)
+
+        // t = 0.5, 1.0: inside cooldown — must keep 96 kHz without falling back to 44.1 kHz
+        XCTAssertEqual(step(at: t0.addingTimeInterval(0.5), mrSampleRate: nil, mrBitDepth: nil), 96_000)
+        XCTAssertEqual(pendingCandidate?.firstSeen, t0, "Gate stability timer must not reset during cooldown.")
+        XCTAssertEqual(step(at: t0.addingTimeInterval(1.0), mrSampleRate: nil, mrBitDepth: nil), 96_000)
+        XCTAssertEqual(pendingCandidate?.firstSeen, t0)
+
+        // t = 1.5: cooldown expires, fresh MediaRemote reports 96 kHz -> still continuous at t0
+        XCTAssertEqual(step(at: t0.addingTimeInterval(1.5), mrSampleRate: 96_000, mrBitDepth: nil), 96_000)
+        XCTAssertEqual(pendingCandidate?.firstSeen, t0)
+    }
+
+    func testOlderLogDoesNotOverrideNewerMediaRemoteBitDepthCacheDuringCooldown() {
+        let logTime = Date(timeIntervalSince1970: 6_000)
+        let probeTime = logTime.addingTimeInterval(0.5)
+        let cooldownTime = logTime.addingTimeInterval(1.0)
+
+        let older16Log = CMPlayerStats(sampleRate: 44_100, bitDepth: 16, date: logTime)
+
+        // 1. At t = 10.5s, MediaRemote reports 24 bit
+        let initial = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: 24,
+            logStats: [older16Log],
+            cachedBitDepthEvidence: nil,
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: probeTime
+        )
+        XCTAssertEqual(initial.source, .mediaRemoteProbe)
+        XCTAssertEqual(initial.stats.first?.bitDepth, 24)
+        XCTAssertEqual(initial.resolvedBitDepthEvidence?.source, .mediaRemoteReport)
+
+        // 2. At t = 11.0s (cooldown), live MediaRemote probe is skipped (nil),
+        //    even if an older (or lower-priority) 16-bit log is present, 24 bit must win.
+        let duringCooldown = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: nil,
+            logStats: [older16Log],
+            cachedBitDepthEvidence: initial.resolvedBitDepthEvidence,
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: cooldownTime
+        )
+        XCTAssertEqual(duringCooldown.source, .mediaRemoteProbe)
+        XCTAssertEqual(duringCooldown.stats.first?.bitDepth, 24, "Older 16-bit log must never overwrite newer 24-bit MediaRemote cache.")
+
+        // 3. Even between two logs, an older 16-bit log cannot overwrite a newer 24-bit log cache.
+        let newer24LogCache = TrackFormatResolutionPolicy.BitDepthEvidence(
+            bitDepth: 24,
+            source: .sourceFormatLog,
+            date: probeTime
+        )
+        let staleLogAttempt = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: nil,
+            logStats: [older16Log],
+            cachedBitDepthEvidence: newer24LogCache,
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: cooldownTime
+        )
+        XCTAssertEqual(staleLogAttempt.stats.first?.bitDepth, 24, "Older log must not overwrite newer cached log evidence.")
+    }
+
+    func testAudioQueueParserIgnoresFloatingPointLPCMFormatAsBitDepth() {
+        let baseDate = Date(timeIntervalSince1970: 7_000)
+        let entries = [
+            // Float LPCM with both float flag (0x00000009 -> bit 0 set) and "float" text
+            SimpleConsole(
+                date: baseDate,
+                message: "AudioConverter from 2 ch, 44100 Hz, lpcm (0x00000009) 32-bit little-endian float to 2 ch, 44100 Hz, Float32"
+            ),
+            // Float LPCM identified purely by kLinearPCMFormatFlagIsFloat (0x00000029 -> bit 0 set)
+            SimpleConsole(
+                date: baseDate.addingTimeInterval(1),
+                message: "AudioConverter from 2 ch, 48000 Hz, lpcm (0x00000029) 32-bit deinterleaved to 2 ch, 48000 Hz, Float32"
+            ),
+            // Float LPCM identified purely by description without hex flags
+            SimpleConsole(
+                date: baseDate.addingTimeInterval(2),
+                message: "AudioConverter from 2 ch, 44100 Hz, lpcm 32-bit little-endian float to 2 ch, 44100 Hz, Float32"
+            ),
+            // Valid 24-bit signed integer LPCM (0x0000000c -> bit 0 clear)
+            SimpleConsole(
+                date: baseDate.addingTimeInterval(3),
+                message: "AudioConverter from 2 ch, 44100 Hz, lpcm (0x0000000c) 24-bit little-endian signed integer to 2 ch, 44100 Hz, Float32"
+            )
+        ]
+
+        let stats = CMPlayerParser.parseAudioQueueConsoleLogs(entries)
+        XCTAssertEqual(stats.count, 4)
+
+        let byDate = Dictionary(uniqueKeysWithValues: stats.map { ($0.date, $0) })
+        XCTAssertNil(byDate[baseDate]?.bitDepth, "lpcm (0x00000009) 32-bit float must not be treated as track bit depth.")
+        XCTAssertNil(byDate[baseDate.addingTimeInterval(1)]?.bitDepth, "lpcm with kLinearPCMFormatFlagIsFloat (0x29) must not yield bit depth.")
+        XCTAssertNil(byDate[baseDate.addingTimeInterval(2)]?.bitDepth, "lpcm float description without hex flags must not yield bit depth.")
+        XCTAssertEqual(byDate[baseDate.addingTimeInterval(3)]?.bitDepth, 24, "24-bit integer LPCM must still preserve bit depth.")
+    }
+
+    func testOutputDeviceSwitchRetainsCachedTrackFormatEvidenceWhileResettingProbeBudget() {
+        let t0 = Date(timeIntervalSince1970: 8_000)
+        var budget = FormatProbeBudget()
+
+        // 1. Track confirms 24-bit from earlier log (later aged out) or MediaRemote, then hits miss limit
+        let confirmedEvidence = TrackFormatResolutionPolicy.BitDepthEvidence(
+            bitDepth: 24,
+            source: .sourceFormatLog,
+            date: t0
+        )
+        budget.recordMediaRemoteAttempt(hasSampleRate: false, hasBitDepth: false, now: t0)
+        budget.recordMediaRemoteAttempt(hasSampleRate: false, hasBitDepth: false, now: t0.addingTimeInterval(2))
+        XCTAssertFalse(budget.shouldProbeMediaRemote(now: t0.addingTimeInterval(4)))
+
+        // 2. User switches output DAC (currently at 44.1 kHz / 16 bit).
+        //    Probe budget resets for the new DAC, while same-track source evidence is retained.
+        let switchTime = t0.addingTimeInterval(70)
+        budget.resetForNewWindow()
+        XCTAssertTrue(budget.shouldProbeMediaRemote(now: switchTime))
+
+        // 3. Even if live probe returns nil and logs are now expired/empty,
+        //    the retained 24-bit source evidence still drives the new DAC to 24 bit instead of accepting 16 bit.
+        let resolutionOnNewDAC = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+            mediaRemoteSampleRate: nil,
+            mediaRemoteBitDepth: nil,
+            logStats: [],
+            cachedSampleRate: nil,
+            cachedBitDepthEvidence: confirmedEvidence,
+            presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+            audioQueueSource: .audioQueueLog,
+            defaultLogSource: .audioQueueLog,
+            now: switchTime
+        )
+        XCTAssertEqual(resolutionOnNewDAC.stats.first?.sampleRate, 44_100)
+        XCTAssertEqual(resolutionOnNewDAC.stats.first?.bitDepth, 24)
+        XCTAssertTrue(
+            RateSwitchingPolicy.shouldApplyBitDepthChange(
+                isEnabled: true,
+                reportedBitDepth: resolutionOnNewDAC.stats.first?.bitDepth,
+                currentBitDepth: 16,
+                selectedBitDepth: 24
+            ),
+            "Retained 24-bit evidence must switch the new 16-bit DAC to 24 bit."
+        )
+    }
+
+    func testRealEmptyProbePreservesCachedSampleRateInsteadOfFallingBackToPreset() {
+        let t0 = Date(timeIntervalSince1970: 9_000)
+        var budget = FormatProbeBudget()
+        var cachedSampleRate: Double?
+        var cachedBitDepth: TrackFormatResolutionPolicy.BitDepthEvidence?
+
+        func step(at time: Date, realProbeRate: Double?, realProbeBitDepth: Int?) -> Double? {
+            let liveRate: Double?
+            let liveDepth: Int?
+            if budget.shouldProbeMediaRemote(now: time) {
+                liveRate = TrackFormatResolutionPolicy.validSampleRate(realProbeRate)
+                liveDepth = TrackFormatResolutionPolicy.validBitDepth(realProbeBitDepth)
+                if let liveRate {
+                    cachedSampleRate = liveRate
+                }
+                budget.recordMediaRemoteAttempt(
+                    hasSampleRate: liveRate != nil,
+                    hasBitDepth: liveDepth != nil,
+                    now: time
+                )
+            } else {
+                liveRate = nil
+                liveDepth = nil
+            }
+            let resolution = TrackFormatResolutionPolicy.resolveNonAppleMusic(
+                mediaRemoteSampleRate: liveRate,
+                mediaRemoteBitDepth: liveDepth,
+                logStats: [],
+                cachedSampleRate: cachedSampleRate,
+                cachedBitDepthEvidence: cachedBitDepth,
+                presetSampleRate: PlayerProfile.spotify.fallbackSampleRate,
+                audioQueueSource: .audioQueueLog,
+                defaultLogSource: .audioQueueLog,
+                now: time
+            )
+            cachedBitDepth = resolution.resolvedBitDepthEvidence
+            return resolution.stats.first?.sampleRate
+        }
+
+        // t = 0.0: real probe returns 96 kHz
+        XCTAssertEqual(step(at: t0, realProbeRate: 96_000, realProbeBitDepth: nil), 96_000)
+        // t = 0.5: cooldown preserves 96 kHz
+        XCTAssertEqual(step(at: t0.addingTimeInterval(0.5), realProbeRate: nil, realProbeBitDepth: nil), 96_000)
+        // t = 1.5: real probe returns nil -> must NOT wipe cached 96 kHz to fall back to 44.1 kHz
+        XCTAssertEqual(step(at: t0.addingTimeInterval(1.5), realProbeRate: nil, realProbeBitDepth: nil), 96_000)
+        // t = 2.0: subsequent cooldown still keeps 96 kHz
+        XCTAssertEqual(step(at: t0.addingTimeInterval(2.0), realProbeRate: nil, realProbeBitDepth: nil), 96_000)
+    }
+
 }
