@@ -9,12 +9,10 @@
             <title>Version 3.2.12 (构建 48)</title>
             <pubDate>Mon, 16 Nov 2026 11:30:28 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[
+            <description xml:lang="zh-Hans" sparkle:format="markdown"><![CDATA[
 RateSync 3.2.12 优化硬件档位选择、连续采样率支持与位深上报一致性，并修复多处格式仲裁边界问题：
 
-RateSync 3.2.12 improves hardware bit-depth selection, continuous sample rate support, and reported bit-depth consistency, while fixing multiple format arbitration edge cases:
-
-#### 新功能与修复 / Improvements and Fixes
+#### 新功能与修复
 
 - **重构位深选档策略（无损容纳优先）**：设备在目标采样率下仅支持 16/32 位时（如部分 DAC 在 48 kHz 下缺少 24 位），24 位曲目优先升选到 32 位容器无损容纳，消除平局降档到 16 位的缺陷；所有档位均不足时回退至最高可用档位。
 - **严格限定位深证据采样率匹配**：Apple Music 格式仲裁严格剔除与当前目标采样率不匹配的孤立历史记录；无匹配采样率记录时保留未知位深并沿用设备当前硬件位深，避免跨采样率误套用 16 位旧记录。
@@ -23,7 +21,14 @@ RateSync 3.2.12 improves hardware bit-depth selection, continuous sample rate su
 - **同曲目暂停恢复隔离旧回调**：暂停及恢复播放时递增曲目代次并重置查询 ID，彻底使在飞行中的旧查询与延迟重试失效，防止旧窗口数据回写。
 - **补齐格式探测与选档数值日志**：移除日志中的 `<private>` 脱敏掩蔽，完整输出源采样率、源位深、设备位深与可用档位列表。
 
----
+如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！
+
+[查看 GitHub 完整说明](https://github.com/BiKing567/RateSync/releases/tag/v3.2.12)
+]]></description>
+            <description xml:lang="en" sparkle:format="markdown"><![CDATA[
+RateSync 3.2.12 improves hardware bit-depth selection, continuous sample rate support, and reported bit-depth consistency, while fixing multiple format arbitration edge cases:
+
+#### Improvements and Fixes
 
 - **Lossless bit-depth selection**: When a device offers only 16/32-bit (e.g. DACs lacking 24-bit at 48 kHz), 24-bit tracks are promoted to 32-bit lossless containers rather than tie-breaking down to 16-bit; falls back to highest available depth when all are insufficient.
 - **Sample rate matched bit-depth arbitration**: Apple Music format resolution discards bit-depth evidence that does not match the target sample rate, preserving current device depth when no evidence matches to prevent mismatched 16-bit cross-rate contamination.
@@ -32,10 +37,9 @@ RateSync 3.2.12 improves hardware bit-depth selection, continuous sample rate su
 - **Pause-resume query invalidation**: Increment track generations and query IDs on both pause and resume to invalidate stale in-flight probes and retries across playback windows.
 - **Unmasked format diagnostics**: Eliminate `<private>` masking in logs to fully report source format, device bit depth, and candidate options.
 
-如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！  
-If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!
+If you encounter any issues during playback or switching, feedback via GitHub Issues is very welcome!
 
-[查看 GitHub 完整说明 / View full release notes](https://github.com/BiKing567/RateSync/releases/tag/v3.2.12)
+[View full release notes on GitHub](https://github.com/BiKing567/RateSync/releases/tag/v3.2.12)
 ]]></description>
             <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.12/RateSync-3.2.12.dmg" sparkle:version="48" sparkle:shortVersionString="3.2.12" sparkle:edSignature="ZT+IwotAmF5wdHbZM9i4Mj3rsFxupAlrDeJkvEbVvREN350/aknWxyMMmdEkSEWHfzdTUJsQTwprLkpiezdbAg==" length="4978265" type="application/octet-stream"/>
         </item>
