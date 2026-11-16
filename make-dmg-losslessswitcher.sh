@@ -359,6 +359,15 @@ if [[ -n "$SIGN_UPDATE" && -x "$SIGN_UPDATE" ]]; then
             <title>Version $VERSION (构建 $BUILD)</title>
             <pubDate>$(date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[
+RateSync $VERSION 更新说明：
+
+#### 新功能与修复 / Improvements and Fixes
+
+- 更新内容...
+
+[查看 GitHub 完整说明 / View full release notes](https://github.com/BiKing567/RateSync/releases/tag/v$VERSION)
+]]></description>
             <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v$VERSION/$(basename "$OUT")" sparkle:version="$SPARKLE_VERSION" sparkle:shortVersionString="$SPARKLE_SHORTVERSION" sparkle:edSignature="$SIG" length="$LEN" type="application/octet-stream"/>
         </item>
 EOF

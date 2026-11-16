@@ -9,79 +9,94 @@
             <title>Version 3.2.12 (构建 48)</title>
             <pubDate>Mon, 16 Nov 2026 11:30:28 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
-            <description><![CDATA[
-                <p>RateSync 3.2.12 优化硬件档位选择、连续采样率支持与位深上报一致性，并修复多处格式仲裁边界问题：</p>
-                <p>RateSync 3.2.12 improves hardware bit-depth selection, continuous sample rate support, and reported bit-depth consistency, while fixing multiple format arbitration edge cases:</p>
-                <h4>新功能与修复 / Improvements and Fixes</h4>
-                <ul>
-                    <li>重构位深选档策略（无损容纳优先）：设备在目标采样率下仅支持 16/32 位时（如部分 DAC 在 48 kHz 下缺少 24 位），24 位曲目优先升选到 32 位容器无损容纳，消除平局降档到 16 位的缺陷；所有档位均不足时回退至最高可用档位。</li>
-                    <li>严格限定位深证据采样率匹配：Apple Music 格式仲裁严格剔除与当前目标采样率不匹配的孤立历史记录；无匹配采样率记录时保留未知位深并沿用设备当前硬件位深，避免跨采样率误套用 16 位旧记录。</li>
-                    <li>支持 CoreAudio 连续采样率范围：解析并保留 <code>kAudioStreamAnyRate</code> 与连续采样率范围，按设备公布的标称采样率展开合法物理格式，使连续范围设备能够正常匹配 48 kHz 等合法档位。</li>
-                    <li>按硬件实际读回状态上报与缓存位深：未开启位深切换或未实际执行物理写入时，小组件与状态上报严格依据设备实际硬件读回位深，不再虚报未写入的源位深。</li>
-                    <li>同曲目暂停恢复隔离旧回调：暂停及恢复播放时递增曲目代次并重置查询 ID，彻底使在飞行中的旧查询与延迟重试失效，防止旧窗口数据回写。</li>
-                    <li>补齐格式探测与选档数值日志：移除日志中的 <code>&lt;private&gt;</code> 脱敏掩蔽，完整输出源采样率、源位深、设备位深与可用档位列表。</li>
-                    <li>Lossless bit-depth selection: when a device offers only 16/32-bit (e.g. DACs lacking 24-bit at 48 kHz), 24-bit tracks are promoted to 32-bit lossless containers rather than tie-breaking down to 16-bit; falls back to highest available depth when all are insufficient.</li>
-                    <li>Sample rate matched bit-depth arbitration: Apple Music format resolution discards bit-depth evidence that does not match the target sample rate, preserving current device depth when no evidence matches to prevent mismatched 16-bit cross-rate contamination.</li>
-                    <li>Continuous CoreAudio sample rate ranges: expand <code>kAudioStreamAnyRate</code> and continuous rate ranges across device nominal rates so 48 kHz and other valid rates are accurately matched.</li>
-                    <li>Hardware read-back bit-depth reporting: when bit-depth switching is disabled or unchanged, status and widgets report the actual read-back hardware depth rather than unwritten source depth.</li>
-                    <li>Pause-resume query invalidation: increment track generations and query IDs on both pause and resume to invalidate stale in-flight probes and retries across playback windows.</li>
-                    <li>Unmasked format diagnostics: eliminate <code>&lt;private&gt;</code> masking in logs to fully report source format, device bit depth, and candidate options.</li>
-                </ul>
-                <p>如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！</p>
-                <p>If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!</p>
-                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.12">查看完整说明 / View full release notes</a></p>
-            ]]></description>
-            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.12</sparkle:releaseNotesLink>
+            <description sparkle:format="markdown"><![CDATA[
+RateSync 3.2.12 优化硬件档位选择、连续采样率支持与位深上报一致性，并修复多处格式仲裁边界问题：
+
+RateSync 3.2.12 improves hardware bit-depth selection, continuous sample rate support, and reported bit-depth consistency, while fixing multiple format arbitration edge cases:
+
+#### 新功能与修复 / Improvements and Fixes
+
+- **重构位深选档策略（无损容纳优先）**：设备在目标采样率下仅支持 16/32 位时（如部分 DAC 在 48 kHz 下缺少 24 位），24 位曲目优先升选到 32 位容器无损容纳，消除平局降档到 16 位的缺陷；所有档位均不足时回退至最高可用档位。
+- **严格限定位深证据采样率匹配**：Apple Music 格式仲裁严格剔除与当前目标采样率不匹配的孤立历史记录；无匹配采样率记录时保留未知位深并沿用设备当前硬件位深，避免跨采样率误套用 16 位旧记录。
+- **支持 CoreAudio 连续采样率范围**：解析并保留 `kAudioStreamAnyRate` 与连续采样率范围，按设备公布的标称采样率展开合法物理格式，使连续范围设备能够正常匹配 48 kHz 等合法档位。
+- **按硬件实际读回状态上报与缓存位深**：未开启位深切换或未实际执行物理写入时，小组件与状态上报严格依据设备实际硬件读回位深，不再虚报未写入的源位深。
+- **同曲目暂停恢复隔离旧回调**：暂停及恢复播放时递增曲目代次并重置查询 ID，彻底使在飞行中的旧查询与延迟重试失效，防止旧窗口数据回写。
+- **补齐格式探测与选档数值日志**：移除日志中的 `<private>` 脱敏掩蔽，完整输出源采样率、源位深、设备位深与可用档位列表。
+
+---
+
+- **Lossless bit-depth selection**: When a device offers only 16/32-bit (e.g. DACs lacking 24-bit at 48 kHz), 24-bit tracks are promoted to 32-bit lossless containers rather than tie-breaking down to 16-bit; falls back to highest available depth when all are insufficient.
+- **Sample rate matched bit-depth arbitration**: Apple Music format resolution discards bit-depth evidence that does not match the target sample rate, preserving current device depth when no evidence matches to prevent mismatched 16-bit cross-rate contamination.
+- **Continuous CoreAudio sample rate ranges**: Expand `kAudioStreamAnyRate` and continuous rate ranges across device nominal rates so 48 kHz and other valid rates are accurately matched.
+- **Hardware read-back bit-depth reporting**: When bit-depth switching is disabled or unchanged, status and widgets report the actual read-back hardware depth rather than unwritten source depth.
+- **Pause-resume query invalidation**: Increment track generations and query IDs on both pause and resume to invalidate stale in-flight probes and retries across playback windows.
+- **Unmasked format diagnostics**: Eliminate `<private>` masking in logs to fully report source format, device bit depth, and candidate options.
+
+如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！  
+If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!
+
+[查看 GitHub 完整说明 / View full release notes](https://github.com/BiKing567/RateSync/releases/tag/v3.2.12)
+]]></description>
             <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.12/RateSync-3.2.12.dmg" sparkle:version="48" sparkle:shortVersionString="3.2.12" sparkle:edSignature="ZT+IwotAmF5wdHbZM9i4Mj3rsFxupAlrDeJkvEbVvREN350/aknWxyMMmdEkSEWHfzdTUJsQTwprLkpiezdbAg==" length="4978265" type="application/octet-stream"/>
         </item>
         <item>
             <title>Version 3.2.11 (构建 47)</title>
             <pubDate>Thu, 12 Nov 2026 10:56:37 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
-            <description><![CDATA[
-                <p>RateSync 3.2.11 改进 Spotify 及非 Apple Music 播放器的独立位深检测与格式证据缓存仲裁：</p>
-                <p>RateSync 3.2.11 improves independent bit-depth detection and format-evidence caching/arbitration for Spotify and other non-Apple Music players:</p>
-                <h4>新功能与修复 / Improvements and Fixes</h4>
-                <ul>
-                    <li>独立解析并合并位深与采样率字段：Spotify 在保留 44.1 kHz 采样率预设的同时独立检测源位深，支持将仅返回位深的 MediaRemote 报告与预设采样率合并；缺少可用位深时保持输出设备当前位深，同时在无 PID 场景下按 Bundle ID 校验播放器归属。</li>
-                    <li>过滤浮点 LPCM 干扰：<code>AudioConverter</code> 日志解析仅检查源格式段，排除含 <code>float</code> 描述与 <code>kLinearPCMFormatFlagIsFloat</code> 标志的浮点 PCM，避免将 32 位浮点混音格式误判为曲目位深。</li>
-                    <li>按播放窗口限制重试并稳定缓存仲裁：以有限重试预算替代永久静音探测黑名单，切歌或暂停恢复后重置预算，暂停期间停止重复查询；按来源优先级与时间戳仲裁位深缓存（播放器报告优先于解码日志），并在冷却期与单次空探测时保留本窗口上次有效采样率，避免候选抖动或回退。</li>
-                    <li>更换输出设备保留同曲目证据：切换 DAC 时仅重置新设备的探测预算，保留同曲目已确认的源采样率与位深证据。</li>
-                    <li>Independent bit-depth resolution &amp; field merging: keep Spotify's 44.1 kHz sample rate preset while independently detecting source bit depth (merging bit-depth-only MediaRemote reports with the preset rate, keeping current device bit depth when unknown, and validating active bundle IDs when PID is unavailable).</li>
-                    <li>Ignore floating-point LPCM mix formats: restrict <code>AudioConverter</code> log inspection to the source segment and reject floating-point LPCM via both <code>float</code> wording and <code>kLinearPCMFormatFlagIsFloat</code> so 32-bit float processing formats are not treated as track bit depth.</li>
-                    <li>Bounded per-window retries &amp; stable evidence arbitration: replace permanent silent-probe app exclusion with a bounded per-window budget that resets on track changes and pause-resume while staying idle during pause; arbitrate cached bit depth by source priority and timestamp, and retain the last valid sample rate across probe cooldowns and empty probes.</li>
-                    <li>Preserve same-track evidence across DAC changes: reset only the new device's probe retry budget on output device switches while keeping verified track sample rate and bit-depth evidence intact.</li>
-                </ul>
-                <p>如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！</p>
-                <p>If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!</p>
-                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.11">查看完整说明 / View full release notes</a></p>
-            ]]></description>
-            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.11</sparkle:releaseNotesLink>
+            <description sparkle:format="markdown"><![CDATA[
+RateSync 3.2.11 改进 Spotify 及非 Apple Music 播放器的独立位深检测与格式证据缓存仲裁：
+
+RateSync 3.2.11 improves independent bit-depth detection and format-evidence caching/arbitration for Spotify and other non-Apple Music players:
+
+#### 新功能与修复 / Improvements and Fixes
+
+- **独立解析并合并位深与采样率字段**：Spotify 在保留 44.1 kHz 采样率预设的同时独立检测源位深，支持将仅返回位深的 MediaRemote 报告与预设采样率合并；缺少可用位深时保持输出设备当前位深，同时在无 PID 场景下按 Bundle ID 校验播放器归属。
+- **过滤浮点 LPCM 干扰**：`AudioConverter` 日志解析仅检查源格式段，排除含 `float` 描述与 `kLinearPCMFormatFlagIsFloat` 标志的浮点 PCM，避免将 32 位浮点混音格式误判为曲目位深。
+- **按播放窗口限制重试并稳定缓存仲裁**：以有限重试预算替代永久静音探测黑名单，切歌或暂停恢复后重置预算，暂停期间停止重复查询；按来源优先级与时间戳仲裁位深缓存（播放器报告优先于解码日志），并在冷却期与单次空探测时保留本窗口上次有效采样率，避免候选抖动或回退。
+- **更换输出设备保留同曲目证据**：切换 DAC 时仅重置新设备的探测预算，保留同曲目已确认的源采样率与位深证据。
+
+---
+
+- **Independent bit-depth resolution & field merging**: keep Spotify's 44.1 kHz sample rate preset while independently detecting source bit depth (merging bit-depth-only MediaRemote reports with the preset rate, keeping current device bit depth when unknown, and validating active bundle IDs when PID is unavailable).
+- **Ignore floating-point LPCM mix formats**: restrict `AudioConverter` log inspection to the source segment and reject floating-point LPCM via both `float` wording and `kLinearPCMFormatFlagIsFloat` so 32-bit float processing formats are not treated as track bit depth.
+- **Bounded per-window retries & stable evidence arbitration**: replace permanent silent-probe app exclusion with a bounded per-window budget that resets on track changes and pause-resume while staying idle during pause; arbitrate cached bit depth by source priority and timestamp, and retain the last valid sample rate across probe cooldowns and empty probes.
+- **Preserve same-track evidence across DAC changes**: reset only the new device's probe retry budget on output device switches while keeping verified track sample rate and bit-depth evidence intact.
+
+如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！  
+If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!
+
+[查看 GitHub 完整说明 / View full release notes](https://github.com/BiKing567/RateSync/releases/tag/v3.2.11)
+]]></description>
             <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.11/RateSync-3.2.11.dmg" sparkle:version="47" sparkle:shortVersionString="3.2.11" sparkle:edSignature="nnzXYJBhkypHXilVdCRkm7H98g2XQxKrYYo85HczLSZxWoGjhh3N4zivHApR2T+Muh2alAYxDeDUG2ckxgMoBg==" length="4958544" type="application/octet-stream"/>
         </item>
         <item>
             <title>Version 3.2.10 (构建 46)</title>
             <pubDate>Wed, 11 Nov 2026 10:45:54 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
-            <description><![CDATA[
-                <p>RateSync 3.2.10 重点优化后台内存占用与事件队列调度，并修复多播放器仲裁及同曲目格式复查的多处边界问题：</p>
-                <p>RateSync 3.2.10 optimizes background memory usage and event-queue coalescing, and fixes edge cases in multi-player arbitration and same-track format revalidation:</p>
-                <h4>新功能与修复 / Improvements and Fixes</h4>
-                <ul>
-                    <li>优化内存占用与后台轮询：去重改用紧凑的封面 SHA-256 摘要，队列阻塞时单槽合并积压事件并立即释放被覆盖的封面数据；日志扫描加入 <code>autoreleasepool</code> 与进程校验缓存；稳态匹配及暂停后跳过重复查询与日志扫描（回应 Issue #5）。</li>
-                    <li>优化多播放器仲裁与队列因果序：调整播放器优先级或重置仲裁状态不再清空当前已刷新的曲目；临时锁定下的清空与曲目事件走同一队列以保持严格顺序；消除排空过程的冗余任务调度。</li>
-                    <li>完善设备变更、位深重试与暂停恢复逻辑：播放中切换输出设备时重新评估当前曲目；同采样率位深设置失败后保留待重试候选；合并快速暂停恢复时保留状态变化以触发复查。</li>
-                    <li>改进同曲目迟到格式变更检测：收到同曲目元数据通知时仅重置重查时间窗口而保留原始开播时间，避免使有效的杜比全景声 / 空间音频日志证据误判过期。</li>
-                    <li>Lower memory usage &amp; idle polling: deduplicate track events via compact SHA-256 artwork digests, coalesce backlogged queue events into a single slot to release superseded artwork immediately, wrap OSLog queries in <code>autoreleasepool</code> with a per-PID verification cache, and skip redundant polling once settled or paused (addresses Issue #5).</li>
-                    <li>Reliable playback arbitration &amp; strict queue ordering: separate player arbitration resets from clearing now-playing tracks so priority changes do not wipe freshly refreshed tracks, serialize temporary-lock clears in the same coalescer queue, and eliminate redundant GCD drain scheduling.</li>
-                    <li>Device switch, bit-depth retry &amp; pause-resume fixes: re-evaluate the active track on output device changes, retain pending candidates when same-rate bit-depth switching fails so polling retries, and preserve pause-to-resume transitions across coalesced events.</li>
-                    <li>Late-format detection without expiring Atmos evidence: keep the original playback start time intact when re-anchoring the re-query window on same-track metadata updates, preventing valid Dolby Atmos / Spatial Audio logs from being treated as stale.</li>
-                </ul>
-                <p>如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！</p>
-                <p>If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!</p>
-                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.10">查看完整说明 / View full release notes</a></p>
-            ]]></description>
-            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.10</sparkle:releaseNotesLink>
+            <description sparkle:format="markdown"><![CDATA[
+RateSync 3.2.10 重点优化后台内存占用与事件队列调度，并修复多播放器仲裁及同曲目格式复查的多处边界问题：
+
+RateSync 3.2.10 optimizes background memory usage and event-queue coalescing, and fixes edge cases in multi-player arbitration and same-track format revalidation:
+
+#### 新功能与修复 / Improvements and Fixes
+
+- **优化内存占用与后台轮询**：去重改用紧凑的封面 SHA-256 摘要，队列阻塞时单槽合并积压事件并立即释放被覆盖的封面数据；日志扫描加入 `autoreleasepool` 与进程校验缓存；稳态匹配及暂停后跳过重复查询与日志扫描（回应 Issue #5）。
+- **优化多播放器仲裁与队列因果序**：调整播放器优先级或重置仲裁状态不再清空当前已刷新的曲目；临时锁定下的清空与曲目事件走同一队列以保持严格顺序；消除排空过程的冗余任务调度。
+- **完善设备变更、位深重试与暂停恢复逻辑**：播放中切换输出设备时重新评估当前曲目；同采样率位深设置失败后保留待重试候选；合并快速暂停恢复时保留状态变化以触发复查。
+- **改进同曲目迟到格式变更检测**：收到同曲目元数据通知时仅重置重查时间窗口而保留原始开播时间，避免使有效的杜比全景声 / 空间音频日志证据误判过期。
+
+---
+
+- **Lower memory usage & idle polling**: deduplicate track events via compact SHA-256 artwork digests, coalesce backlogged queue events into a single slot to release superseded artwork immediately, wrap OSLog queries in `autoreleasepool` with a per-PID verification cache, and skip redundant polling once settled or paused (addresses Issue #5).
+- **Reliable playback arbitration & strict queue ordering**: separate player arbitration resets from clearing now-playing tracks so priority changes do not wipe freshly refreshed tracks, serialize temporary-lock clears in the same coalescer queue, and eliminate redundant GCD drain scheduling.
+- **Device switch, bit-depth retry & pause-resume fixes**: re-evaluate the active track on output device changes, retain pending candidates when same-rate bit-depth switching fails so polling retries, and preserve pause-to-resume transitions across coalesced events.
+- **Late-format detection without expiring Atmos evidence**: keep the original playback start time intact when re-anchoring the re-query window on same-track metadata updates, preventing valid Dolby Atmos / Spatial Audio logs from being treated as stale.
+
+如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！  
+If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!
+
+[查看 GitHub 完整说明 / View full release notes](https://github.com/BiKing567/RateSync/releases/tag/v3.2.10)
+]]></description>
             <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.10/RateSync-3.2.10.dmg" sparkle:version="46" sparkle:shortVersionString="3.2.10" sparkle:edSignature="MwF8Ihq2qlA213YWMQhTUcZVcVeV2qkPufN6RtUkt1JIRIe5e6c90iqR8J6xNTt08tRrinLGdqxt/DoQolZgCA==" length="4939058" type="application/octet-stream"/>
         </item>
         <item>
