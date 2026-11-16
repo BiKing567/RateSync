@@ -3,6 +3,7 @@
 //  RateSync
 //
 
+import CoreAudio
 import CoreAudioTypes
 import Foundation
 
@@ -1227,19 +1228,31 @@ enum AppleMusicFormatPolicy {
         formatEvidence: CMPlayerStats?,
         fallbackEvidence: CMPlayerStats?,
         decoderEvidence: CMPlayerStats? = nil,
+        targetSampleRate: Double? = nil,
         expectedTrackID: String? = nil,
         expectedTrackTitle: String? = nil
     ) -> Int? {
-        let validFormat = formatEvidence.flatMap {
-            $0.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle) ? nil : $0
+        let candidates = [formatEvidence, decoderEvidence, fallbackEvidence].compactMap { stat -> CMPlayerStats? in
+            guard let stat, stat.bitDepth != nil else { return nil }
+            guard !stat.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle) else { return nil }
+            if let targetSampleRate, abs(stat.sampleRate - targetSampleRate) >= 1.0 {
+                return nil
+            }
+            return stat
         }
-        let validDecoder = decoderEvidence.flatMap {
-            $0.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle) ? nil : $0
+
+        guard !candidates.isEmpty else { return nil }
+
+        let bestCandidate = candidates.max { lhs, rhs in
+            let lhsAttributed = lhs.isAttributed(trackID: expectedTrackID, title: expectedTrackTitle)
+            let rhsAttributed = rhs.isAttributed(trackID: expectedTrackID, title: expectedTrackTitle)
+            if lhsAttributed != rhsAttributed {
+                return !lhsAttributed && rhsAttributed
+            }
+            return lhs.date < rhs.date
         }
-        let validFallback = fallbackEvidence.flatMap {
-            $0.isMismatched(trackID: expectedTrackID, title: expectedTrackTitle) ? nil : $0
-        }
-        return validFormat?.bitDepth ?? validDecoder?.bitDepth ?? validFallback?.bitDepth
+
+        return bestCandidate?.bitDepth
     }
 }
 
@@ -1247,6 +1260,20 @@ enum AppleMusicFormatPolicy {
 /// This is deliberately stateless so the matching policy can be tested apart
 /// from CoreAudio and the event-driven switching pipeline.
 enum AudioFormatSelector {
+    /// Selects the best bit depth from available depths for a target depth.
+    /// Prefers the smallest bit depth that can accommodate the target depth (lossless containment).
+    /// If all available depths are smaller than the target depth, picks the highest available depth.
+    static func selectBestBitDepth(
+        from availableDepths: [UInt32],
+        targetDepth: Int32
+    ) -> UInt32? {
+        let accommodating = availableDepths.filter { Int32($0) >= targetDepth }
+        if !accommodating.isEmpty {
+            return accommodating.min()
+        }
+        return availableDepths.max()
+    }
+
     static func nearestFormat(
         sampleRate: Float64,
         bitDepth: Int32,
@@ -1268,19 +1295,50 @@ enum AudioFormatSelector {
         }
 
         let formatsAtTargetRate = formats.filter { $0.mSampleRate == targetRate }
-        let closestBitDepth = formatsAtTargetRate.min(by: {
-            let lhsDistance = abs(Int32($0.mBitsPerChannel) - bitDepth)
-            let rhsDistance = abs(Int32($1.mBitsPerChannel) - bitDepth)
-            if lhsDistance != rhsDistance {
-                return lhsDistance < rhsDistance
-            }
-            return $0.mBitsPerChannel < $1.mBitsPerChannel
-        })?.mBitsPerChannel
-
-        guard let closestBitDepth else { return nil }
-        return formatsAtTargetRate.first {
-            $0.mSampleRate == targetRate && $0.mBitsPerChannel == closestBitDepth
+        guard let bestBitDepth = selectBestBitDepth(
+            from: formatsAtTargetRate.map(\.mBitsPerChannel),
+            targetDepth: bitDepth
+        ) else {
+            return nil
         }
+
+        return formatsAtTargetRate.first {
+            $0.mSampleRate == targetRate && $0.mBitsPerChannel == bestBitDepth
+        }
+    }
+
+    /// Expands CoreAudio ranged physical formats into concrete formats across supported sample rates.
+    ///
+    /// CoreAudio drivers may use `kAudioStreamAnyRate` (0.0) with an `AudioValueRange` to specify
+    /// continuous ranges (e.g. 44.1 kHz - 96 kHz). For each rate supported by the device within
+    /// the range, a concrete format with that rate is produced so standard exact rate matching succeeds.
+    static func expandRangedFormats(
+        _ rangedFormats: [AudioStreamRangedDescription],
+        supportedSampleRates: [Float64]
+    ) -> [AudioStreamBasicDescription] {
+        var results = [AudioStreamBasicDescription]()
+        for ranged in rangedFormats {
+            var coveredRates = Set<Double>()
+            if ranged.mFormat.mSampleRate > 0 {
+                results.append(ranged.mFormat)
+                coveredRates.insert(ranged.mFormat.mSampleRate)
+            }
+            let minRate = ranged.mSampleRateRange.mMinimum
+            let maxRate = ranged.mSampleRateRange.mMaximum
+            if minRate > 0 && maxRate >= minRate {
+                for supportedRate in supportedSampleRates {
+                    if supportedRate >= minRate && supportedRate <= maxRate {
+                        if !coveredRates.contains(supportedRate) {
+                            var concrete = ranged.mFormat
+                            concrete.mSampleRate = supportedRate
+                            results.append(concrete)
+                            coveredRates.insert(supportedRate)
+                        }
+                    }
+                }
+            }
+        }
+        return results
     }
 }
 
@@ -1400,6 +1458,27 @@ enum DeviceFormatVerification {
         let validStreamDepth = streamPhysicalFormat.map { Int($0.mBitsPerChannel) }.flatMap { $0 > 0 ? $0 : nil }
         let fallbackBitDepth = validStreamDepth ?? currentOutputBitDepth ?? previousBitDepth
         return FallbackFormatState(sampleRate: fallbackRate, bitDepth: fallbackBitDepth)
+    }
+
+    /// Determines the effective applied bit depth to report to status, widgets, and user scripts.
+    ///
+    /// When bit depth switching is enabled and a target depth was set, prefers the stream's
+    /// read-back physical bit depth.
+    /// When bit depth switching is disabled (or the source did not report one), the device
+    /// was not configured with a new bit depth, so the verified read-back bit depth of the device
+    /// (or existing confirmed device depth) must be preserved instead of reporting an unapplied target depth.
+    static func resolveAppliedBitDepth(
+        isBitDepthDetectionEnabled: Bool,
+        sourceReportedBitDepth: Int?,
+        targetBitDepth: UInt32,
+        readBackBitDepth: Int?,
+        currentOutputBitDepth: Int?,
+        previousBitDepth: Int?
+    ) -> Int? {
+        if isBitDepthDetectionEnabled && sourceReportedBitDepth != nil {
+            return readBackBitDepth ?? Int(targetBitDepth)
+        }
+        return readBackBitDepth ?? currentOutputBitDepth ?? previousBitDepth
     }
 }
 

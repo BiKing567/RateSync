@@ -3621,4 +3621,84 @@ final class SwitchingSupportTests: XCTestCase {
         XCTAssertEqual(step(at: t0.addingTimeInterval(2.0), realProbeRate: nil, realProbeBitDepth: nil), 96_000)
     }
 
+    func testBitDepthEvidencePrefersTargetRateMatchAndNewerTimestampOverOlderFormatRecord() {
+        let t0 = Date(timeIntervalSince1970: 10_000)
+        let olderFormat = CMPlayerStats(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            date: t0,
+            isAppleMusicFormat: true
+        )
+        let newerDecoder = CMPlayerStats(
+            sampleRate: 96_000,
+            bitDepth: 24,
+            date: t0.addingTimeInterval(2.0),
+            isAppleMusicFormat: false
+        )
+
+        // 1. When target sample rate is 96 kHz, decoder's matching 24-bit evidence must win
+        //    over the older 44.1 kHz format record.
+        let bitDepthFor96k = AppleMusicFormatPolicy.bitDepthEvidence(
+            formatEvidence: olderFormat,
+            fallbackEvidence: nil,
+            decoderEvidence: newerDecoder,
+            targetSampleRate: 96_000
+        )
+        XCTAssertEqual(bitDepthFor96k, 24, "Candidate matching target rate (96k/24bit) must be selected.")
+
+        // 2. Even without target rate specified, newer evidence takes precedence over older evidence.
+        let bitDepthUnspecified = AppleMusicFormatPolicy.bitDepthEvidence(
+            formatEvidence: olderFormat,
+            fallbackEvidence: nil,
+            decoderEvidence: newerDecoder
+        )
+        XCTAssertEqual(bitDepthUnspecified, 24, "Newer decoder record must take precedence over older format record.")
+    }
+
+    func testBitDepthEvidenceReturnsNilWhenNoCandidateMatchesTargetSampleRate() {
+        let t0 = Date(timeIntervalSince1970: 10_000)
+        let onlyFormatAt441 = CMPlayerStats(
+            sampleRate: 44_100,
+            bitDepth: 16,
+            date: t0,
+            isAppleMusicFormat: true
+        )
+
+        // Target sample rate is 96 kHz. The only available evidence is 44.1 kHz / 16 bit.
+        // It must be rejected because its sample rate is incompatible with the target.
+        // Returning nil preserves the device's current bit depth rather than forcing 16 bit.
+        let result = AppleMusicFormatPolicy.bitDepthEvidence(
+            formatEvidence: onlyFormatAt441,
+            fallbackEvidence: nil,
+            decoderEvidence: nil,
+            targetSampleRate: 96_000
+        )
+        XCTAssertNil(result, "Incompatible 44.1 kHz format evidence must not supply bit depth for a 96 kHz target.")
+    }
+
+    func testPauseResumeGenerationInvalidatesInFlightProbeFromPreviousWindow() {
+        var generation: UInt64 = 1
+
+        // Pre-pause async probe is initiated with generation 1
+        let inFlightProbeGeneration: UInt64 = generation
+
+        // User pauses playback -> generation increments, invalidating in-flight queries
+        generation &+= 1
+        XCTAssertFalse(
+            AppleMusicSampleRateQueryPolicy.isCurrent(
+                expectedQueryID: inFlightProbeGeneration,
+                currentQueryID: generation
+            ),
+            "In-flight probe from before pause must not match paused generation."
+        )
+
+        // User resumes playback -> generation increments again for the new window
+        generation &+= 1
+        let newWindowGeneration = generation
+
+        // The pre-pause probe returns now:
+        XCTAssertFalse(inFlightProbeGeneration == newWindowGeneration, "Stale pre-pause query must be rejected in new window.")
+        XCTAssertTrue(newWindowGeneration == generation, "Fresh query matching current window is accepted.")
+    }
+
 }

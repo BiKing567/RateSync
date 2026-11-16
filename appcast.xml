@@ -6,6 +6,35 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>Version 3.2.12 (构建 48)</title>
+            <pubDate>Mon, 16 Nov 2026 11:30:28 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>RateSync 3.2.12 优化硬件档位选择、连续采样率支持与位深上报一致性，并修复多处格式仲裁边界问题：</p>
+                <p>RateSync 3.2.12 improves hardware bit-depth selection, continuous sample rate support, and reported bit-depth consistency, while fixing multiple format arbitration edge cases:</p>
+                <h4>新功能与修复 / Improvements and Fixes</h4>
+                <ul>
+                    <li>重构位深选档策略（无损容纳优先）：设备在目标采样率下仅支持 16/32 位时（如部分 DAC 在 48 kHz 下缺少 24 位），24 位曲目优先升选到 32 位容器无损容纳，消除平局降档到 16 位的缺陷；所有档位均不足时回退至最高可用档位。</li>
+                    <li>严格限定位深证据采样率匹配：Apple Music 格式仲裁严格剔除与当前目标采样率不匹配的孤立历史记录；无匹配采样率记录时保留未知位深并沿用设备当前硬件位深，避免跨采样率误套用 16 位旧记录。</li>
+                    <li>支持 CoreAudio 连续采样率范围：解析并保留 <code>kAudioStreamAnyRate</code> 与连续采样率范围，按设备公布的标称采样率展开合法物理格式，使连续范围设备能够正常匹配 48 kHz 等合法档位。</li>
+                    <li>按硬件实际读回状态上报与缓存位深：未开启位深切换或未实际执行物理写入时，小组件与状态上报严格依据设备实际硬件读回位深，不再虚报未写入的源位深。</li>
+                    <li>同曲目暂停恢复隔离旧回调：暂停及恢复播放时递增曲目代次并重置查询 ID，彻底使在飞行中的旧查询与延迟重试失效，防止旧窗口数据回写。</li>
+                    <li>补齐格式探测与选档数值日志：移除日志中的 <code>&lt;private&gt;</code> 脱敏掩蔽，完整输出源采样率、源位深、设备位深与可用档位列表。</li>
+                    <li>Lossless bit-depth selection: when a device offers only 16/32-bit (e.g. DACs lacking 24-bit at 48 kHz), 24-bit tracks are promoted to 32-bit lossless containers rather than tie-breaking down to 16-bit; falls back to highest available depth when all are insufficient.</li>
+                    <li>Sample rate matched bit-depth arbitration: Apple Music format resolution discards bit-depth evidence that does not match the target sample rate, preserving current device depth when no evidence matches to prevent mismatched 16-bit cross-rate contamination.</li>
+                    <li>Continuous CoreAudio sample rate ranges: expand <code>kAudioStreamAnyRate</code> and continuous rate ranges across device nominal rates so 48 kHz and other valid rates are accurately matched.</li>
+                    <li>Hardware read-back bit-depth reporting: when bit-depth switching is disabled or unchanged, status and widgets report the actual read-back hardware depth rather than unwritten source depth.</li>
+                    <li>Pause-resume query invalidation: increment track generations and query IDs on both pause and resume to invalidate stale in-flight probes and retries across playback windows.</li>
+                    <li>Unmasked format diagnostics: eliminate <code>&lt;private&gt;</code> masking in logs to fully report source format, device bit depth, and candidate options.</li>
+                </ul>
+                <p>如果在使用过程中还有遇到切错档位的情况，欢迎通过 GitHub Issues 反馈！</p>
+                <p>If you still encounter any incorrect sample rate or bit depth switching, feedback via GitHub Issues is very welcome!</p>
+                <p><a href="https://github.com/BiKing567/RateSync/releases/tag/v3.2.12">查看完整说明 / View full release notes</a></p>
+            ]]></description>
+            <sparkle:releaseNotesLink>https://github.com/BiKing567/RateSync/releases/tag/v3.2.12</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.2.12/RateSync-3.2.12.dmg" sparkle:version="48" sparkle:shortVersionString="3.2.12" sparkle:edSignature="ZT+IwotAmF5wdHbZM9i4Mj3rsFxupAlrDeJkvEbVvREN350/aknWxyMMmdEkSEWHfzdTUJsQTwprLkpiezdbAg==" length="4978265" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.11 (构建 47)</title>
             <pubDate>Thu, 12 Nov 2026 10:56:37 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>

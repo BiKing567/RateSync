@@ -452,10 +452,11 @@ class OutputDevices: ObservableObject {
                 : [.coreAudio]
             let logs = try Console.getRecentEntries(types: entryTypes, process: process, durationSeconds: durationSeconds)
             allStats.append(contentsOf: parser(logs))
-            RateSyncLog.switching.info("[getAllStats] \(allStats)")
+            let statsSummary = allStats.map { "\($0.sampleRate)Hz/\($0.bitDepth.map { "\($0)bit" } ?? "nil")" }.joined(separator: ", ")
+            RateSyncLog.switching.info("[getAllStats] count=\(allStats.count, privacy: .public) [\(statsSummary, privacy: .public)]")
         }
         catch {
-            RateSyncLog.switching.info("[getAllStats, error] \(error)")
+            RateSyncLog.switching.info("[getAllStats, error] \(String(describing: error), privacy: .public)")
         }
 
         return allStats
@@ -891,17 +892,19 @@ class OutputDevices: ObservableObject {
 
         appleMusicSampleRateState = .resolved(effectiveRate)
         let atmosProbeStatus = appleMusicAtmosProbeCompletedGeneration == generation ? "complete" : "pending"
-        RateSyncLog.switching.info("[AM RateDecision] source=AppleScript/Decoder action=stabilityGate sampleRate=\(effectiveRate, privacy: .public) atmosProbe=\(atmosProbeStatus, privacy: .public)")
+        let bitDepthEvidence = AppleMusicFormatPolicy.bitDepthEvidence(
+            formatEvidence: appleMusicFormatEvidence,
+            fallbackEvidence: appleMusicFallbackFormat,
+            decoderEvidence: appleMusicDecoderFormatEvidence,
+            targetSampleRate: effectiveRate,
+            expectedTrackID: expectedTrack.id,
+            expectedTrackTitle: expectedTrack.title
+        )
+        RateSyncLog.switching.info("[AM RateDecision] source=AppleScript/Decoder action=stabilityGate sampleRate=\(effectiveRate, privacy: .public) bitDepth=\(bitDepthEvidence.map { "\($0)bit" } ?? "nil", privacy: .public) atmosProbe=\(atmosProbeStatus, privacy: .public)")
 
         let stat = CMPlayerStats.sampleRateOnly(
             sampleRate: effectiveRate,
-            bitDepth: AppleMusicFormatPolicy.bitDepthEvidence(
-                formatEvidence: appleMusicFormatEvidence,
-                fallbackEvidence: appleMusicFallbackFormat,
-                decoderEvidence: appleMusicDecoderFormatEvidence,
-                expectedTrackID: expectedTrack.id,
-                expectedTrackTitle: expectedTrack.title
-            )
+            bitDepth: bitDepthEvidence
         )
         applyStats(
             [stat],
@@ -1671,6 +1674,18 @@ class OutputDevices: ObservableObject {
             guard let defaultDevice = defaultDevice,
                   let formats = self.getFormats(device: defaultDevice) else { return }
 
+            let availableDepthsAtTargetRate = formats
+                .filter { $0.mSampleRate == sampleRate }
+                .map { Int($0.mBitsPerChannel) }
+                .sorted()
+            let availableDepthsDescription = availableDepthsAtTargetRate.isEmpty
+                ? "none"
+                : availableDepthsAtTargetRate.map { "\($0)bit" }.joined(separator: ", ")
+
+            RateSyncLog.switching.info(
+                "[FormatSelector] source=\(source, privacy: .public) sourceRate=\(sampleRate, privacy: .public) Hz sourceDepth=\(first.bitDepth.map { "\($0)bit" } ?? "nil", privacy: .public) deviceDepth=\(currentOutputBitDepth.map { "\($0)bit" } ?? "nil", privacy: .public) hintDepth=\(bitDepth, privacy: .public) bit availableAtRate=[\(availableDepthsDescription, privacy: .public)]"
+            )
+
             let suitableFormat = AudioFormatSelector.nearestFormat(
                 sampleRate: sampleRate,
                 bitDepth: bitDepth,
@@ -1722,6 +1737,18 @@ class OutputDevices: ObservableObject {
                 )
                 let formatChanged = sampleRateChanged || bitDepthChanged
 
+                let readBackOutputBitDepth = defaultDevice.streams(scope: .output)?.first?.physicalFormat
+                    .map { Int($0.mBitsPerChannel) }
+                    .flatMap { $0 > 0 ? $0 : nil }
+                let appliedBitDepth = DeviceFormatVerification.resolveAppliedBitDepth(
+                    isBitDepthDetectionEnabled: enableBitDepthDetection,
+                    sourceReportedBitDepth: first.bitDepth,
+                    targetBitDepth: suitableFormat.mBitsPerChannel,
+                    readBackBitDepth: readBackOutputBitDepth,
+                    currentOutputBitDepth: currentOutputBitDepth,
+                    previousBitDepth: previousBitDepth
+                )
+
                 // An equal-rate result is a NO-OP (device already correct).
                 // Applying-and-caching it in `trackAndSample` would wrongly "settle" the track's
                 // switching lock: a genuine rate arriving later would then be forced onto
@@ -1731,18 +1758,15 @@ class OutputDevices: ObservableObject {
                 // match separately so steady-state polling stops after the settling window.
                 if !formatChanged {
                     if let currentTrack = currentTrack {
-                        let matchedBitDepth = first.bitDepth != nil
-                            ? Int(suitableFormat.mBitsPerChannel)
-                            : currentOutputBitDepth ?? previousBitDepth
                         self.cacheConfirmedDeviceMatch(
                             currentTrack,
                             deviceUID: defaultDevice.uid,
                             sampleRate: currentDeviceSampleRate ?? suitableFormat.mSampleRate,
-                            bitDepth: matchedBitDepth,
+                            bitDepth: appliedBitDepth,
                             sourceSampleRate: sampleRate
                         )
                     }
-                    RateSyncLog.switching.info("already at target format, nothing to apply (left uncached)")
+                    RateSyncLog.switching.info("already at target format target=\(suitableFormat.mSampleRate, privacy: .public)Hz/\(suitableFormat.mBitsPerChannel, privacy: .public)bit (device at \(currentDeviceSampleRate ?? -1, privacy: .public)Hz/\(appliedBitDepth ?? -1, privacy: .public)bit), nothing to apply (left uncached)")
                     return
                 }
 
@@ -1807,16 +1831,24 @@ class OutputDevices: ObservableObject {
                     return
                 }
 
-                let appliedBitDepth = first.bitDepth != nil
-                    ? Int(suitableFormat.mBitsPerChannel)
-                    : currentOutputBitDepth ?? previousBitDepth
-                self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: appliedBitDepth, runUserScript: formatChanged)
+                let postApplyReadBackBitDepth = defaultDevice.streams(scope: .output)?.first?.physicalFormat
+                    .map { Int($0.mBitsPerChannel) }
+                    .flatMap { $0 > 0 ? $0 : nil }
+                let finalAppliedBitDepth = DeviceFormatVerification.resolveAppliedBitDepth(
+                    isBitDepthDetectionEnabled: enableBitDepthDetection,
+                    sourceReportedBitDepth: first.bitDepth,
+                    targetBitDepth: suitableFormat.mBitsPerChannel,
+                    readBackBitDepth: postApplyReadBackBitDepth,
+                    currentOutputBitDepth: currentOutputBitDepth,
+                    previousBitDepth: previousBitDepth
+                )
+                self.updateSampleRate(suitableFormat.mSampleRate, bitDepth: finalAppliedBitDepth, runUserScript: formatChanged)
                 if let currentTrack = currentTrack {
                     self.cacheTrackResult(
                         currentTrack,
                         deviceUID: defaultDevice.uid,
                         sampleRate: suitableFormat.mSampleRate,
-                        bitDepth: appliedBitDepth,
+                        bitDepth: finalAppliedBitDepth,
                         sourceSampleRate: sampleRate
                     )
                 }
@@ -1890,10 +1922,10 @@ class OutputDevices: ObservableObject {
     }
 
     func getFormats(device: AudioDevice) -> [AudioStreamBasicDescription]? {
-        // new sample rate + bit depth detection route
         let streams = device.streams(scope: .output)
-        let availableFormats = streams?.first?.availablePhysicalFormats?.compactMap({$0.mFormat})
-        return availableFormats
+        guard let rangedFormats = streams?.first?.availablePhysicalFormats else { return nil }
+        let supportedRates = device.nominalSampleRates ?? []
+        return AudioFormatSelector.expandRangedFormats(rangedFormats, supportedSampleRates: supportedRates)
     }
     
     func setFormats(device: AudioDevice?, format: AudioStreamBasicDescription?) {
@@ -2170,9 +2202,15 @@ class OutputDevices: ObservableObject {
             if isPlaying == false {
                 self.appleMusicSampleRateState = .notPlaying
                 self.appleMusicSampleRateWaitStartedAt = nil
+                self.appleMusicSampleRateQueryID &+= 1
                 self.appleMusicResumeRetryWorkItem?.cancel()
                 self.appleMusicResumeRetryWorkItem = nil
                 self.appleMusicResumeCheckAttempts = 0
+                self.appleMusicRecoveryWorkItem?.cancel()
+                self.appleMusicRecoveryWorkItem = nil
+                self.appleMusicRecoveryAttempts = 0
+                self.currentTrackGeneration &+= 1
+                self.pendingCandidate = nil
                 return
             } else {
                 let wasNotPlaying = (self.appleMusicSampleRateState == .notPlaying)
@@ -2181,6 +2219,8 @@ class OutputDevices: ObservableObject {
                 self.appleMusicResumeCheckAttempts = 0
                 if wasNotPlaying || hasResumedFromPause {
                     let resumedAt = eventDate ?? Date()
+                    self.currentTrackGeneration &+= 1
+                    self.appleMusicSampleRateQueryID &+= 1
                     self.currentTrackStartedAt = resumedAt
                     self.currentTrackRequeryStartedAt = resumedAt
                     self.appleMusicSampleRateState = .waiting
@@ -2214,11 +2254,14 @@ class OutputDevices: ObservableObject {
         } else {
             if newTrack.payload.isPlaying == false {
                 self.formatProbeBudget.setPaused(true)
+                self.currentTrackGeneration &+= 1
+                self.pendingCandidate = nil
                 return
             }
             let wasPaused = self.formatProbeBudget.isPaused
             if wasPaused || hasResumedFromPause {
                 let resumedAt = eventDate ?? Date()
+                self.currentTrackGeneration &+= 1
                 self.resetNonAppleMusicProbeWindow()
                 self.currentTrackStartedAt = resumedAt
                 self.currentTrackRequeryStartedAt = resumedAt

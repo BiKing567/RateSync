@@ -157,7 +157,7 @@ class CMPlayerParser {
                 stats.append(stat)
                 sampleRate = nil
                 bitDepth = nil
-                RateSyncLog.switching.info("detected stat \(stat)")
+                RateSyncLog.switching.info("detected stat sampleRate=\(sr, privacy: .public) Hz bitDepth=\(bd, privacy: .public)")
                 break
             }
             
@@ -280,7 +280,7 @@ class CMPlayerParser {
         let converterStats = converterEvidences.map { $0.stat }
         let combined = (converterStats + standaloneQueueStats).sorted(by: { $0.date > $1.date })
         if let first = combined.first {
-            RateSyncLog.switching.info("detected audioqueue stat \(first)")
+            RateSyncLog.switching.info("detected audioqueue stat sampleRate=\(first.sampleRate, privacy: .public) Hz bitDepth=\(first.bitDepth.map { "\($0)bit" } ?? "nil", privacy: .public)")
         }
         return combined
     }
