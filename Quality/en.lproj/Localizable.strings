@@ -20,6 +20,9 @@
 "NetEase Music" = "NetEase Music";
 "QQ Music" = "QQ Music";
 
+/* Multi-player conflict */
+"Multiple players active, output 48 kHz" = "Multiple players active, output 48 kHz";
+
 /* Multi-player takeover */
 "Player Priority" = "Player Priority";
 "Temporary Source Lock" = "Temporary Source Lock";

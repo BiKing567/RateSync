@@ -49,25 +49,14 @@ class Defaults: ObservableObject {
         self.userPreferIconStatusBarItem = UserDefaults.standard.bool(forKey: kUserPreferIconStatusBarItem)
         self.userPreferBitDepthDetection = UserDefaults.standard.bool(forKey: kUserPreferBitDepthDetection)
         self.userPreferSampleRateMultiples = UserDefaults.standard.bool(forKey: kUserPreferSampleRateMultiples)
-        self.monitoredBundleIdentifier = UserDefaults.standard.string(forKey: kMonitoredBundleIdentifier)
-        let storedPriority = UserDefaults.standard.array(forKey: kPlayerPriorityBundleIdentifiers) as? [String] ?? []
-        self.playerPriorityBundleIdentifiers = PlayerProfile.normalizedPriority(storedPriority)
-        let storedLockBundleIdentifier = UserDefaults.standard.string(forKey: kTemporarySourceLockBundleIdentifier)
-        let storedLockExpiresAt = UserDefaults.standard.object(forKey: kTemporarySourceLockExpiresAt) as? Date
-        if storedLockBundleIdentifier != nil,
-           let storedLockExpiresAt,
-           storedLockExpiresAt <= Date() {
-            UserDefaults.standard.removeObject(forKey: kTemporarySourceLockBundleIdentifier)
-            UserDefaults.standard.removeObject(forKey: kTemporarySourceLockExpiresAt)
-            self.temporarySourceLock = nil
-        } else if let storedLockBundleIdentifier {
-            self.temporarySourceLock = PlayerSourceLock(
-                bundleIdentifier: storedLockBundleIdentifier,
-                expiresAt: storedLockExpiresAt
-            )
-        } else {
-            self.temporarySourceLock = nil
-        }
+        // Clear deprecated source monitoring and priority settings so old values no longer persist.
+        UserDefaults.standard.removeObject(forKey: kMonitoredBundleIdentifier)
+        UserDefaults.standard.removeObject(forKey: kPlayerPriorityBundleIdentifiers)
+        UserDefaults.standard.removeObject(forKey: kTemporarySourceLockBundleIdentifier)
+        UserDefaults.standard.removeObject(forKey: kTemporarySourceLockExpiresAt)
+        self.monitoredBundleIdentifier = nil
+        self.playerPriorityBundleIdentifiers = PlayerProfile.defaultPriorityBundleIdentifiers
+        self.temporarySourceLock = nil
         self.autoEQEnabled = UserDefaults.standard.bool(forKey: kAutoEQEnabled)
     }
     
@@ -104,46 +93,14 @@ class Defaults: ObservableObject {
         }
     }
 
-    /// Which app's playback triggers sample rate switching.
-    /// `nil` means monitor every app that reports Now Playing info.
-    @Published var monitoredBundleIdentifier: String? {
-        willSet {
-            if let newValue = newValue {
-                UserDefaults.standard.set(newValue, forKey: kMonitoredBundleIdentifier)
-            } else {
-                UserDefaults.standard.removeObject(forKey: kMonitoredBundleIdentifier)
-            }
-        }
-    }
+    /// Deprecated: Source monitoring is now automatic for all registered players.
+    @Published var monitoredBundleIdentifier: String? = nil
 
-    /// Player order used when `monitoredBundleIdentifier` is nil.
-    /// The first player wins when multiple sources report activity.
-    @Published var playerPriorityBundleIdentifiers: [String] {
-        willSet {
-            UserDefaults.standard.set(
-                PlayerProfile.normalizedPriority(newValue),
-                forKey: kPlayerPriorityBundleIdentifiers
-            )
-        }
-    }
+    /// Deprecated: Priority order is no longer used; multi-player arbitration rules apply.
+    @Published var playerPriorityBundleIdentifiers: [String] = PlayerProfile.defaultPriorityBundleIdentifiers
 
-    /// A temporary source lock overrides both the regular monitor source and
-    /// the automatic priority order until it expires or is cleared.
-    @Published var temporarySourceLock: PlayerSourceLock? {
-        willSet {
-            if let newValue {
-                UserDefaults.standard.set(newValue.bundleIdentifier, forKey: kTemporarySourceLockBundleIdentifier)
-                if let expiresAt = newValue.expiresAt {
-                    UserDefaults.standard.set(expiresAt, forKey: kTemporarySourceLockExpiresAt)
-                } else {
-                    UserDefaults.standard.removeObject(forKey: kTemporarySourceLockExpiresAt)
-                }
-            } else {
-                UserDefaults.standard.removeObject(forKey: kTemporarySourceLockBundleIdentifier)
-                UserDefaults.standard.removeObject(forKey: kTemporarySourceLockExpiresAt)
-            }
-        }
-    }
+    /// Deprecated: Temporary source lock is no longer used.
+    @Published var temporarySourceLock: PlayerSourceLock? = nil
 
     var activeTemporarySourceLock: PlayerSourceLock? {
         guard let temporarySourceLock, temporarySourceLock.isActive else { return nil }

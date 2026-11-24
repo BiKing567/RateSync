@@ -16,6 +16,10 @@ struct MenuView: View {
         VStack {
             ContentView()
 
+            if outputDevices.isMultiPlayerConflictActive {
+                Text("Multiple players active, output 48 kHz", comment: "Status shown when multiple players are outputting audio simultaneously")
+            }
+
             Divider()
 
             Button {
@@ -46,155 +50,9 @@ struct MenuView: View {
                         outputDevices.applyAppleMusicEQIfNeeded()
                     }
                 }
-
-                Menu {
-                    Text("Priority applies when All Apps is selected.", comment: "Explanation for automatic multi-player takeover")
-
-                    ForEach(Array(defaults.playerPriorityBundleIdentifiers.enumerated()), id: \.element) { index, bundleIdentifier in
-                        if let profile = PlayerProfile.profile(for: bundleIdentifier) {
-                            let localizedProfileName = NSLocalizedString(
-                                profile.localizationKey,
-                                comment: "Player name in priority list"
-                            )
-
-                            Menu {
-                                Button {
-                                    defaults.movePlayerUp(bundleIdentifier)
-                                    outputDevices.reevaluateNowPlaying()
-                                } label: {
-                                    Text("Move Up", comment: "Player priority action")
-                                }
-                                .disabled(index == 0)
-
-                                Button {
-                                    defaults.movePlayerDown(bundleIdentifier)
-                                    outputDevices.reevaluateNowPlaying()
-                                } label: {
-                                    Text("Move Down", comment: "Player priority action")
-                                }
-                                .disabled(index == defaults.playerPriorityBundleIdentifiers.count - 1)
-                            } label: {
-                                Text(
-                                    MenuLabelPolicy.playerPriorityTitle(
-                                        index: index + 1,
-                                        localizedName: localizedProfileName
-                                    )
-                                )
-                            }
-                        }
-                    }
-                } label: {
-                    Text("Player Priority", comment: "Submenu title for ordering automatic player takeover")
-                }
-                .disabled(defaults.monitoredBundleIdentifier != nil)
-
-                Menu {
-                    ForEach(PlayerProfile.monitoringSources) { profile in
-                        Menu {
-                            Button {
-                                defaults.lockSource(profile.bundleIdentifier, duration: 15 * 60)
-                                outputDevices.reevaluateNowPlaying()
-                            } label: {
-                                Text("15 Minutes", comment: "Temporary source lock duration")
-                            }
-
-                            Button {
-                                defaults.lockSource(profile.bundleIdentifier, duration: 30 * 60)
-                                outputDevices.reevaluateNowPlaying()
-                            } label: {
-                                Text("30 Minutes", comment: "Temporary source lock duration")
-                            }
-
-                            Button {
-                                defaults.lockSource(profile.bundleIdentifier, duration: 60 * 60)
-                                outputDevices.reevaluateNowPlaying()
-                            } label: {
-                                Text("1 Hour", comment: "Temporary source lock duration")
-                            }
-
-                            Button {
-                                defaults.lockSource(profile.bundleIdentifier, duration: nil)
-                                outputDevices.reevaluateNowPlaying()
-                            } label: {
-                                Text("Until Unlocked", comment: "Temporary source lock duration")
-                            }
-                        } label: {
-                            HStack {
-                                Image(
-                                    systemName: defaults.activeTemporarySourceLock?.bundleIdentifier == profile.bundleIdentifier
-                                        ? "checkmark"
-                                        : "circle"
-                                )
-                                Text(LocalizedStringKey(profile.localizationKey))
-                            }
-                        }
-                    }
-
-                    Divider()
-
-                    Button {
-                        defaults.clearTemporarySourceLock()
-                        outputDevices.reevaluateNowPlaying()
-                    } label: {
-                        Text("Unlock Source", comment: "Clear the temporary source lock")
-                    }
-                    .disabled(defaults.activeTemporarySourceLock == nil)
-
-                    if let lock = defaults.activeTemporarySourceLock,
-                       let profile = PlayerProfile.profile(for: lock.bundleIdentifier) {
-                        let localizedProfileName = NSLocalizedString(
-                            profile.localizationKey,
-                            comment: "Player name in source lock status"
-                        )
-                        if let expiresAt = lock.expiresAt {
-                            Text(
-                                String(
-                                    format: NSLocalizedString(
-                                        "Locked: %@ — until %@",
-                                        comment: "Current temporary source lock status with expiry"
-                                    ),
-                                    localizedProfileName,
-                                    expiresAt.formatted(date: .omitted, time: .shortened)
-                                )
-                            )
-                        } else {
-                            Text(
-                                String(
-                                    format: NSLocalizedString(
-                                        "Locked: %@ — until unlocked",
-                                        comment: "Current indefinite temporary source lock status"
-                                    ),
-                                    localizedProfileName
-                                )
-                            )
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Text("Temporary Source Lock", comment: "Submenu title for temporarily locking one player")
-                        if defaults.activeTemporarySourceLock != nil {
-                            Image(systemName: "lock.fill")
-                        }
-                    }
-                }
             } label: {
                 Text("Experimental Features", comment: "Submenu title for experimental toggles")
             }
-
-            Menu {
-                ForEach(PlayerProfile.monitoringSources) { profile in
-                    Toggle(isOn: monitoredSourceBinding(for: profile.bundleIdentifier)) {
-                        Text(LocalizedStringKey(profile.localizationKey))
-                    }
-                }
-
-                Toggle(isOn: monitoredSourceBinding(for: nil)) {
-                    Text("All Apps", comment: "Monitoring source option: monitor every app")
-                }
-            } label: {
-                Text("Monitor Source", comment: "Submenu title for choosing which app to monitor")
-            }
-            .disabled(defaults.activeTemporarySourceLock != nil)
 
             Menu {
                 Toggle(isOn: selectedDeviceBinding(for: nil)) {
@@ -268,29 +126,6 @@ struct MenuView: View {
                 Text("Quit RateSync", comment: "Menu item: quit the app")
             }
         }
-    }
-
-    private func monitoredSourceBinding(for bundleIdentifier: String?) -> Binding<Bool> {
-        Binding(
-            get: {
-                MenuSelectionState.isSelected(
-                    selectedIdentifier: MenuSelectionState.effectiveSelectedIdentifier(
-                        selectedIdentifier: defaults.monitoredBundleIdentifier,
-                        temporaryLockIdentifier: defaults.activeTemporarySourceLock?.bundleIdentifier
-                    ),
-                    optionIdentifier: bundleIdentifier
-                )
-            },
-            set: { isSelected in
-                guard defaults.activeTemporarySourceLock == nil else { return }
-                guard isSelected || MenuSelectionState.isSelected(
-                    selectedIdentifier: defaults.monitoredBundleIdentifier,
-                    optionIdentifier: bundleIdentifier
-                ) else { return }
-                defaults.monitoredBundleIdentifier = isSelected ? bundleIdentifier : nil
-                outputDevices.reevaluateNowPlaying()
-            }
-        )
     }
 
     private func selectedDeviceBinding(for uid: String?) -> Binding<Bool> {

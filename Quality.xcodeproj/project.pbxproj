@@ -9,6 +9,10 @@
 /* Begin PBXBuildFile section */
 		1221F3F9280F10A3003E8B77 /* SimplyCoreAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 1221F3F8280F10A3003E8B77 /* SimplyCoreAudio */; };
 		1221F3FB280F1EEF003E8B77 /* OutputDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1221F3FA280F1EEF003E8B77 /* OutputDevices.swift */; };
+		BFD000112E10000100320001 /* OutputDevices+AppleMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFD000012E10000100320001 /* OutputDevices+AppleMusic.swift */; };
+		BFD000122E10000100320001 /* OutputDevices+AudioLogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFD000022E10000100320001 /* OutputDevices+AudioLogs.swift */; };
+		BFD000132E10000100320001 /* OutputDevices+Arbitration.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFD000032E10000100320001 /* OutputDevices+Arbitration.swift */; };
+		BFD000142E10000100320001 /* OutputDevices+CoreAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFD000042E10000100320001 /* OutputDevices+CoreAudio.swift */; };
 		1234F50E281E8F07007EC9F5 /* MediaTrack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1234F50D281E8F07007EC9F5 /* MediaTrack.swift */; };
 		1234F510281E9520007EC9F5 /* MediaRemoteController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1234F50F281E9520007EC9F5 /* MediaRemoteController.swift */; };
 		1254A79C2813FB9400241107 /* Defaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1254A79B2813FB9400241107 /* Defaults.swift */; };
@@ -37,6 +41,8 @@
 		BF9900022E0999990032F001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BF9900032E0999990032F001 /* Localizable.strings */; };
 		BFA000112E10000100320001 /* RateSwitchingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000012E10000100320001 /* RateSwitchingPolicy.swift */; };
 		BFA000122E10000100320001 /* AppleMusicService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000022E10000100320001 /* AppleMusicService.swift */; };
+		BFB000022E10000100320001 /* AudioProcessMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFB000012E10000100320001 /* AudioProcessMonitor.swift */; };
+		BFC000022E10000100320001 /* MultiPlayerArbitrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFC000012E10000100320001 /* MultiPlayerArbitrationTests.swift */; };
 		BFA000132E10000100320001 /* UserScriptRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000032E10000100320001 /* UserScriptRunner.swift */; };
 		BFA000142E10000100320001 /* AudioFormatSelectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000042E10000100320001 /* AudioFormatSelectorTests.swift */; };
 		BFA000152E10000100320001 /* RateSwitchingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA000012E10000100320001 /* RateSwitchingPolicy.swift */; };
@@ -101,6 +107,10 @@
 
 /* Begin PBXFileReference section */
 		1221F3FA280F1EEF003E8B77 /* OutputDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputDevices.swift; sourceTree = "<group>"; };
+		BFD000012E10000100320001 /* OutputDevices+AppleMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OutputDevices+AppleMusic.swift"; sourceTree = "<group>"; };
+		BFD000022E10000100320001 /* OutputDevices+AudioLogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OutputDevices+AudioLogs.swift"; sourceTree = "<group>"; };
+		BFD000032E10000100320001 /* OutputDevices+Arbitration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OutputDevices+Arbitration.swift"; sourceTree = "<group>"; };
+		BFD000042E10000100320001 /* OutputDevices+CoreAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OutputDevices+CoreAudio.swift"; sourceTree = "<group>"; };
 		1234F50D281E8F07007EC9F5 /* MediaTrack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTrack.swift; sourceTree = "<group>"; };
 		1234F50F281E9520007EC9F5 /* MediaRemoteController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRemoteController.swift; sourceTree = "<group>"; };
 		1254A79B2813FB9400241107 /* Defaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Defaults.swift; sourceTree = "<group>"; };
@@ -130,6 +140,8 @@
 		BF9900042E0999990032F001 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		BFA000012E10000100320001 /* RateSwitchingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RateSwitchingPolicy.swift; sourceTree = "<group>"; };
 		BFA000022E10000100320001 /* AppleMusicService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicService.swift; sourceTree = "<group>"; };
+		BFB000012E10000100320001 /* AudioProcessMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioProcessMonitor.swift; sourceTree = "<group>"; };
+		BFC000012E10000100320001 /* MultiPlayerArbitrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPlayerArbitrationTests.swift; sourceTree = "<group>"; };
 		BFA000032E10000100320001 /* UserScriptRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserScriptRunner.swift; sourceTree = "<group>"; };
 		BFA000042E10000100320001 /* AudioFormatSelectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFormatSelectorTests.swift; sourceTree = "<group>"; };
 		BFA000052E10000100320001 /* RateSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RateSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -228,8 +240,13 @@
 				D1A600000000000000000003 /* RateSyncLogging.swift */,
 				1272AAAD280DC68A00FD72BA /* CMPlayerStuff.swift */,
 				1221F3FA280F1EEF003E8B77 /* OutputDevices.swift */,
+				BFD000012E10000100320001 /* OutputDevices+AppleMusic.swift */,
+				BFD000022E10000100320001 /* OutputDevices+AudioLogs.swift */,
+				BFD000032E10000100320001 /* OutputDevices+Arbitration.swift */,
+				BFD000042E10000100320001 /* OutputDevices+CoreAudio.swift */,
 				BFA000012E10000100320001 /* RateSwitchingPolicy.swift */,
 				BFA000022E10000100320001 /* AppleMusicService.swift */,
+				BFB000012E10000100320001 /* AudioProcessMonitor.swift */,
 				BFA000032E10000100320001 /* UserScriptRunner.swift */,
 				BFA000192E10000100320001 /* PlayerProfile.swift */,
 				BFA0001C2E10000100320001 /* OneShotCompletion.swift */,
@@ -272,6 +289,7 @@
 			children = (
 				BFA000042E10000100320001 /* AudioFormatSelectorTests.swift */,
 				D1A700000000000000000002 /* RateSyncLoggingTests.swift */,
+				BFC000012E10000100320001 /* MultiPlayerArbitrationTests.swift */,
 				BFA000172E10000100320001 /* SwitchingSupportTests.swift */,
 			);
 			path = RateSyncTests;
@@ -436,6 +454,10 @@
 				1234F50E281E8F07007EC9F5 /* MediaTrack.swift in Sources */,
 				BF342D822E0948730032F398 /* MenuView.swift in Sources */,
 				1221F3FB280F1EEF003E8B77 /* OutputDevices.swift in Sources */,
+				BFD000112E10000100320001 /* OutputDevices+AppleMusic.swift in Sources */,
+				BFD000122E10000100320001 /* OutputDevices+AudioLogs.swift in Sources */,
+				BFD000132E10000100320001 /* OutputDevices+Arbitration.swift in Sources */,
+				BFD000142E10000100320001 /* OutputDevices+CoreAudio.swift in Sources */,
 				1272AAAE280DC68A00FD72BA /* CMPlayerStuff.swift in Sources */,
 				1272AAAC280DC5E900FD72BA /* Console.swift in Sources */,
 				D1A600000000000000000001 /* RateSyncLogging.swift in Sources */,
@@ -449,6 +471,7 @@
 				127C972D281FCF000087313B /* AppVersion.swift in Sources */,
 				BFA000112E10000100320001 /* RateSwitchingPolicy.swift in Sources */,
 				BFA000122E10000100320001 /* AppleMusicService.swift in Sources */,
+				BFB000022E10000100320001 /* AudioProcessMonitor.swift in Sources */,
 				BFA000132E10000100320001 /* UserScriptRunner.swift in Sources */,
 				BFA0001A2E10000100320001 /* PlayerProfile.swift in Sources */,
 				BFA0001D2E10000100320001 /* OneShotCompletion.swift in Sources */,
@@ -473,6 +496,7 @@
 				3DE301B5C3F9464FB9D4D6D7 /* Console.swift in RateSyncTests Sources */,
 				D1A600000000000000000002 /* RateSyncLogging.swift in RateSyncTests Sources */,
 				D1A700000000000000000001 /* RateSyncLoggingTests.swift in Sources */,
+				BFC000022E10000100320001 /* MultiPlayerArbitrationTests.swift in Sources */,
 				ED4BD2FD8D97481D96BD2EA3 /* CMPlayerStuff.swift in RateSyncTests Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

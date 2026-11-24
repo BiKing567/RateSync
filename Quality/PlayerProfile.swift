@@ -46,6 +46,7 @@ struct PlayerProfile: Equatable, Identifiable {
     )
 
     static let monitoringSources = [appleMusic, spotify, neteaseMusic, qqMusic]
+    static let registeredBundleIdentifiers: Set<String> = Set(monitoringSources.map(\.bundleIdentifier))
 
     /// Default takeover order used when the user selects "All Apps".
     /// Keeping Apple Music first preserves the behaviour users already had

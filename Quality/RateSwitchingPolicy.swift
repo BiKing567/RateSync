@@ -1482,3 +1482,373 @@ enum DeviceFormatVerification {
     }
 }
 
+// MARK: - Multi-Player Arbitration
+
+enum PlayerPlaybackStatus: Equatable {
+    case playing
+    case paused
+    case stopped
+    case unknown
+}
+
+// MARK: - Playback Record Validator
+
+enum PlayerPlaybackRecordValidator {
+    static let defaultMaxFreshness: TimeInterval = 15.0
+
+    /// Validates whether a cached playback record is valid, fresh, and belongs to the active process.
+    ///
+    /// - Parameter recordPID: The process ID captured when the record was created.
+    /// - Parameter recordTimestamp: The timestamp when the record was captured.
+    /// - Parameter activeProcessPIDs: PIDs currently outputting audio according to Core Audio.
+    /// - Parameter appProcessID: The PID of the running application instance.
+    /// - Parameter appLaunchDate: The launch date of the application instance (if available).
+    /// - Parameter now: The current time.
+    /// - Parameter maxFreshness: The maximum acceptable age of the record (default: 15s).
+    static func isValid(
+        recordPID: pid_t?,
+        recordTimestamp: Date,
+        activeProcessPIDs: Set<pid_t>,
+        appProcessID: pid_t,
+        appLaunchDate: Date?,
+        now: Date = Date(),
+        maxFreshness: TimeInterval = defaultMaxFreshness
+    ) -> Bool {
+        // 1. Process identity validation: PID must match active audio process or running application PID.
+        guard let effectivePID = recordPID else { return false }
+        let pidMatches = activeProcessPIDs.contains(effectivePID) || effectivePID == appProcessID
+        guard pidMatches else { return false }
+
+        // 2. Launch date validation: record must not predate current app instance launch.
+        if let launchDate = appLaunchDate, recordTimestamp < launchDate {
+            return false
+        }
+
+        // 3. Freshness validation: record must not be older than maxFreshness or in the far future.
+        let age = now.timeIntervalSince(recordTimestamp)
+        guard age >= -1.0 && age <= maxFreshness else {
+            return false
+        }
+
+        return true
+    }
+}
+
+struct PlayerPlaybackRecordSnapshot: Equatable {
+    let bundleIdentifier: String
+    let isPlaying: Bool?
+    let processID: pid_t?
+    let recordedAt: Date
+
+    init(
+        bundleIdentifier: String,
+        isPlaying: Bool?,
+        processID: pid_t? = nil,
+        recordedAt: Date = Date()
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.isPlaying = isPlaying
+        self.processID = processID
+        self.recordedAt = recordedAt
+    }
+}
+
+/// Manages arbitration query generations, conflict stabilization state versioning,
+/// confirmed playing player sets, and conflict execution guards.
+///
+/// Ensures:
+/// 1. Query generation is bumped at start of query, discarding late/stale query returns (P2-3).
+/// 2. Duplicate confirmations of conflict do not invalidate or reschedule running stabilization timer (P1).
+/// 3. Inactive/empty processes immediately invalidate pending queries and cancel stabilization (P2-3).
+/// 4. Player pause/stop events immediately cancel stabilization and advance stateVersion (P2-new).
+/// 5. Stabilization timer verification checks stateVersion, active streams, and confirms no active player has paused (P2-new).
+/// 6. Binds confirmed playing members: member set changes invalidate timer and bump stateVersion (P2-P17-2).
+/// 7. Premature conflict active flag is eliminated: only set active after hardware verification confirms success (P2-P17-1).
+final class MultiPlayerArbitrationTracker {
+    /// Incremented on every async query dispatch; used to discard stale query completions.
+    private(set) var queryGeneration: UInt64 = 0
+
+    /// State version tracking conflict status and player state changes.
+    /// Incremented whenever:
+    /// - A new stabilization window is scheduled;
+    /// - Any player pauses, stops, or changes playback state;
+    /// - Active player members change;
+    /// - Conflict is cancelled or active processes become empty.
+    private(set) var stateVersion: UInt64 = 0
+
+    /// Whether a stabilization timer is currently waiting.
+    private(set) var isStabilizationScheduled: Bool = false
+
+    /// The state version for which the current stabilization timer was scheduled.
+    private(set) var scheduledStateVersion: UInt64?
+
+    /// The target rate scheduled for stabilization.
+    private(set) var scheduledTargetRate: Double?
+
+    /// The confirmed player members for which stabilization was scheduled.
+    private(set) var scheduledPlayers: Set<String> = []
+
+    /// The timestamp when stabilization was scheduled.
+    private(set) var scheduledAt: Date?
+
+    /// Last observed active output players on the controlled device.
+    private(set) var lastKnownActivePlayers: Set<String> = []
+
+    /// Whether multi-player conflict is currently active on the device.
+    var isConflictActive: Bool = false
+
+    /// Starts a new arbitration query, bumping generation upfront.
+    @discardableResult
+    func beginQuery() -> UInt64 {
+        queryGeneration &+= 1
+        return queryGeneration
+    }
+
+    /// Verifies if an async query result matches the current generation.
+    func isQueryResultValid(queryGen: UInt64) -> Bool {
+        return queryGen == queryGeneration
+    }
+
+    /// Updates active output player members on the controlled device.
+    /// If members change while stabilization is pending, cancels timer and advances stateVersion.
+    @discardableResult
+    func updateActiveOutputPlayers(_ players: Set<String>) -> Bool {
+        if players == lastKnownActivePlayers {
+            return false
+        }
+        lastKnownActivePlayers = players
+        if isStabilizationScheduled {
+            cancelStabilization(reason: "active players changed from \(scheduledPlayers) to \(players)")
+        }
+        return true
+    }
+
+    /// Schedules a stabilization window for a detected conflict with confirmed playing players.
+    /// Returns true if a NEW timer should be scheduled, along with the captured timer version.
+    /// If stabilization is already scheduled for the SAME players, returns false without invalidating it (P1).
+    /// If players changed, old timer is cancelled and a new timer is scheduled.
+    func scheduleStabilization(targetRate: Double, players: Set<String> = [], now: Date = Date()) -> (shouldSchedule: Bool, version: UInt64) {
+        if isConflictActive {
+            return (false, stateVersion)
+        }
+        if isStabilizationScheduled {
+            if players.isEmpty || players == scheduledPlayers {
+                // Already scheduled for identical players: keep running timer!
+                return (false, scheduledStateVersion ?? stateVersion)
+            }
+            // Players changed: cancel old and start fresh stabilization window
+            cancelStabilization(reason: "player members changed during stabilization")
+        }
+        stateVersion &+= 1
+        isStabilizationScheduled = true
+        scheduledStateVersion = stateVersion
+        scheduledTargetRate = targetRate
+        scheduledPlayers = players
+        scheduledAt = now
+        return (true, stateVersion)
+    }
+
+    /// Cancels stabilization when a player pauses, stops, or switches to single player.
+    /// Bumps stateVersion so any in-flight stabilization timers are rejected as stale.
+    func cancelStabilization(reason: String = "") {
+        if isStabilizationScheduled {
+            stateVersion &+= 1
+        }
+        isStabilizationScheduled = false
+        scheduledStateVersion = nil
+        scheduledTargetRate = nil
+        scheduledPlayers = []
+        scheduledAt = nil
+    }
+
+    /// Cancels all pending work when active processes become empty.
+    func handleEmptyProcesses() {
+        queryGeneration &+= 1
+        stateVersion &+= 1
+        isStabilizationScheduled = false
+        scheduledStateVersion = nil
+        scheduledTargetRate = nil
+        scheduledPlayers = []
+        scheduledAt = nil
+        lastKnownActivePlayers = []
+        isConflictActive = false
+    }
+
+    /// Verifies if a stabilization timer is eligible to commit 48 kHz upon expiration.
+    /// Checks:
+    /// 1. Timer state version must match scheduledStateVersion and current stateVersion.
+    /// 2. Active output players count >= 2.
+    /// 3. Active output players must match the confirmed scheduled players set.
+    /// 4. Confirmed playing players: no member of scheduledPlayers has reported pause/stop after scheduling.
+    func canCommitStabilization(
+        timerVersion: UInt64,
+        activeOutputPlayers: Set<String>,
+        records: [String: PlayerPlaybackRecordSnapshot]? = nil
+    ) -> Bool {
+        guard isStabilizationScheduled else { return false }
+        guard scheduledStateVersion == timerVersion else { return false }
+        guard stateVersion == timerVersion else { return false }
+        guard activeOutputPlayers.count >= 2 else { return false }
+        if !scheduledPlayers.isEmpty {
+            guard activeOutputPlayers == scheduledPlayers else { return false }
+        }
+
+        // Check latest player records: only a pause reported AFTER stabilization confirmation vetoes commit!
+        if let records = records {
+            let playersToCheck = scheduledPlayers.isEmpty ? activeOutputPlayers : scheduledPlayers
+            for player in playersToCheck {
+                if let record = records[player], record.isPlaying == false {
+                    if let scheduledAt = self.scheduledAt {
+                        if record.recordedAt > scheduledAt {
+                            return false
+                        }
+                    } else {
+                        return false
+                    }
+                }
+            }
+        }
+
+        return true
+    }
+
+    /// Called when the stabilization timer fires and validation passes.
+    /// Finishes the stabilization timer without prematurely marking conflict active.
+    @discardableResult
+    func endStabilizationTimer(timerVersion: UInt64) -> Bool {
+        guard isStabilizationScheduled, stateVersion == timerVersion else { return false }
+        isStabilizationScheduled = false
+        scheduledStateVersion = nil
+        scheduledPlayers = []
+        scheduledAt = nil
+        return true
+    }
+
+    /// Called when the stabilization timer completes and hardware write is immediately confirmed.
+    @discardableResult
+    func commitStabilization(timerVersion: UInt64) -> Bool {
+        guard endStabilizationTimer(timerVersion: timerVersion) else { return false }
+        markConflictActive()
+        return true
+    }
+
+    /// Marks multi-player conflict as active AFTER hardware confirms target rate applied.
+    func markConflictActive() {
+        isConflictActive = true
+    }
+
+    /// Resets conflict state (e.g. when returning to single player, idle, or write failed).
+    func resetConflict() {
+        isConflictActive = false
+        isStabilizationScheduled = false
+        scheduledStateVersion = nil
+        scheduledTargetRate = nil
+        scheduledPlayers = []
+        scheduledAt = nil
+    }
+}
+
+struct AudioProcessSnapshot: Equatable {
+    let pid: pid_t
+    let bundleIdentifier: String?
+    let isRunningOutput: Bool
+    let outputDeviceIDs: [AudioObjectID]
+}
+
+enum MultiPlayerArbitrationAction: Equatable {
+    /// 0 registered players playing -> keep current sample rate, do not switch on pause.
+    case keepCurrent(reason: String)
+    /// 1 registered player playing -> single player playback.
+    case singlePlayer(bundleIdentifier: String, isTransitionFromMultiPlayer: Bool)
+    /// >= 2 registered players playing simultaneously -> switch output to 48 kHz (if supported).
+    case multiPlayerConflict(targetRate: Double, isSupportedByDevice: Bool)
+}
+
+enum MultiPlayerArbitrationPolicy {
+    /// Four registered players monitored by RateSync.
+    static let registeredBundleIdentifiers: Set<String> = [
+        "com.apple.Music",
+        "com.spotify.client",
+        "com.netease.163music",
+        "com.tencent.QQMusicMac"
+    ]
+
+    /// Deduplicates audio processes by registered player and filters only those outputting
+    /// to the currently controlled audio device.
+    ///
+    /// - Non-registered processes (browsers, Finder, system sounds) are ignored.
+    /// - Multiple audio processes belonging to the same player are counted as 1 player.
+    /// - Processes outputting to other devices are ignored.
+    static func registeredPlayersWithActiveOutput(
+        processes: [AudioProcessSnapshot],
+        controlledDeviceID: AudioObjectID?
+    ) -> Set<String> {
+        guard let controlledDeviceID else { return [] }
+        var result = Set<String>()
+        for proc in processes {
+            guard proc.isRunningOutput else { continue }
+            guard let bundleID = proc.bundleIdentifier,
+                  registeredBundleIdentifiers.contains(bundleID) else { continue }
+            guard proc.outputDeviceIDs.contains(controlledDeviceID) else { continue }
+            result.insert(bundleID)
+        }
+        return result
+    }
+
+    /// Determines whether a track change event from a player should be accepted for the controlled device.
+    ///
+    /// Track events from players outputting to other devices (e.g. built-in speakers or AirPods)
+    /// must be ignored so they do not hijack the controlled DAC (P2).
+    static func shouldAcceptTrackEvent(
+        forControlledDeviceID controlledDeviceID: AudioObjectID?,
+        playerBundleIdentifier: String,
+        processes: [AudioProcessSnapshot]
+    ) -> Bool {
+        guard let controlledDeviceID else { return false }
+        let activePlayers = registeredPlayersWithActiveOutput(
+            processes: processes,
+            controlledDeviceID: controlledDeviceID
+        )
+        return activePlayers.contains(playerBundleIdentifier)
+    }
+
+    /// Evaluates arbitration action based on confirmed player playback statuses.
+    ///
+    /// - If any outputting player's state is unknown, preserves current format.
+    /// - 0 playing -> keep current.
+    /// - 1 playing -> singlePlayer.
+    /// - >= 2 playing -> multiPlayerConflict (48 kHz).
+    static func evaluate(
+        activeOutputPlayers: Set<String>,
+        playbackStatuses: [String: PlayerPlaybackStatus],
+        supportedSampleRates: [Double],
+        previousWasMultiPlayer: Bool
+    ) -> MultiPlayerArbitrationAction {
+        var playingPlayers = Set<String>()
+        for player in activeOutputPlayers {
+            let status = playbackStatuses[player] ?? .unknown
+            switch status {
+            case .playing:
+                playingPlayers.insert(player)
+            case .paused, .stopped:
+                break
+            case .unknown:
+                // State cannot be read; preserve current format and wait for next confirmation.
+                return .keepCurrent(reason: "Playback state for \(player) cannot be determined")
+            }
+        }
+
+        if playingPlayers.isEmpty {
+            return .keepCurrent(reason: "No registered player is currently playing")
+        } else if playingPlayers.count == 1, let single = playingPlayers.first {
+            return .singlePlayer(
+                bundleIdentifier: single,
+                isTransitionFromMultiPlayer: previousWasMultiPlayer
+            )
+        } else {
+            let supports48k = supportedSampleRates.contains(48_000)
+            return .multiPlayerConflict(targetRate: 48_000, isSupportedByDevice: supports48k)
+        }
+    }
+}
+
