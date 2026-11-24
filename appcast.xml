@@ -6,6 +6,46 @@
         <description>RateSync 更新清单</description>
         <language>zh-cn</language>
         <item>
+            <title>RateSync 3.3.0 Beta 1（预发布测试版）</title>
+            <pubDate>Tue, 24 Nov 2026 07:40:20 +0000</pubDate>
+            <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
+            <description xml:lang="zh-Hans" sparkle:format="markdown"><![CDATA[
+RateSync 3.3.0 Beta 1 带来全新的音乐软件自适应识别功能，省去繁琐的手动音源设置，同时优化了软件内更新弹窗的显示体验：
+
+#### 新功能与改进
+
+- **自适应识别音乐软件**：无需再手动指定监听软件、调整优先级或设置临时锁定，自动识别当前正在向音频设备输出声音的音乐软件（支持 Apple Music、Spotify、网易云音乐、QQ 音乐），播谁就自动跟随谁切换采样率与位深。
+- **多软件同时播放自动处理**：当两个及以上音乐软件同时发声时，自动平稳切换至 48 kHz 避免采样率反复跳动（若设备不支持则保持当前档位）并保护原有位深；等其中一个暂停或退出后，自动恢复剩下软件当前曲目的原生采样率，桌面小组件也会同步更新。
+- **整体稳定性提升**：重新整理了底层音频与设备管理逻辑，日常切歌、切换播放器以及更换音频设备时更加稳定流畅。
+
+#### 修复
+
+- **更新弹窗显示修复**：修复此前检查更新弹窗缺少应用图标、说明排版错乱及中英文混杂显示的问题，现已支持清晰排版并按系统语言自动展示中文或英文更新说明。
+
+这是预发布测试版，暂非正式版；测试中如遇任何问题，欢迎通过 GitHub Issues 反馈！
+
+[查看 GitHub 完整说明](https://github.com/BiKing567/RateSync/releases/tag/v3.3.0-beta.1)
+]]></description>
+            <description xml:lang="en" sparkle:format="markdown"><![CDATA[
+RateSync 3.3.0 Beta 1 introduces automatic music app detection for a zero-setup listening experience, along with a cleaner in-app update window:
+
+#### What's New & Improved
+
+- **Automatic Music App Detection**: No more manual source selection, priority lists, or temporary locks. RateSync automatically detects which supported music app (Apple Music, Spotify, NetEase Cloud Music, QQ Music) is actively playing to your DAC and switches sample rate and bit depth seamlessly.
+- **Smart Multi-App Playback Handling**: When two or more music apps play at the same time, RateSync smoothly switches to 48 kHz to prevent sample rate jumping (or stays at the current rate if 48 kHz is unsupported) while preserving bit depth. Once the extra app pauses or closes, it automatically restores the remaining track's native format and updates the widget.
+- **Smoother Switching**: Rebuilt internal audio management for more reliable transitions when switching tracks, apps, or DACs.
+
+#### Fixes
+
+- **Update Window Improvements**: Fixed the missing app icon and formatting issues in the software update dialog; release notes now render cleanly and automatically match your system language (English or Chinese).
+
+This is a pre-release beta. Please report any issues via GitHub Issues!
+
+[View full release notes on GitHub](https://github.com/BiKing567/RateSync/releases/tag/v3.3.0-beta.1)
+]]></description>
+            <enclosure url="https://github.com/BiKing567/RateSync/releases/download/v3.3.0-beta.1/RateSync-3.3.0-beta.1.dmg" sparkle:version="49" sparkle:shortVersionString="3.3.0" sparkle:edSignature="AEdE3lJJ+Xg05l939ertQh9dhczjIvyMrEOAHnG0/o1+Z9PRiob5SSiwjAGlxeq8w4ultj8BosHFd6UD2ceeCQ==" length="5087251" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 3.2.12 (构建 48)</title>
             <pubDate>Mon, 16 Nov 2026 11:30:28 +0000</pubDate>
             <sparkle:minimumSystemVersion>15.4</sparkle:minimumSystemVersion>
